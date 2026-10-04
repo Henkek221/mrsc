@@ -1,0 +1,111 @@
+name: MRSC
+options:
+  bundleIdPrefix: com.ecki
+settings:
+  base:
+    # Bump CURRENT_PROJECT_VERSION for every TestFlight upload; app and widget share both.
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  MRSC:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    info:
+      path: MRSC/Info.plist
+      properties:
+        CFBundleDisplayName: MRSC
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen: {}
+        UIBackgroundModes: [audio]
+        NSSpeechRecognitionUsageDescription: MRSC recognises lyrics in your songs on this device.
+        NSAppleMusicUsageDescription: MRSC looks up animated album covers in the Apple Music catalog. Nothing from your library is shared.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSSupportsLiveActivities: true
+        NSLocalNetworkUsageDescription: MRSC connects to your music server on your network to stream and download your music.
+        # Self-hosted servers often run plain HTTP. NSAllowsLocalNetworking would make iOS ignore NSAllowsArbitraryLoads.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        UIApplicationShortcutItems:
+          - UIApplicationShortcutItemType: com.ecki.mrsc.goodbye
+            UIApplicationShortcutItemTitle: Goodbye — see you soon
+            UIApplicationShortcutItemSubtitle: Thanks for listening
+            UIApplicationShortcutItemIconSymbolName: hand.wave
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            CPTemplateApplicationSceneSessionRoleApplication:
+              - UISceneClassName: CPTemplateApplicationScene
+                UISceneConfigurationName: CarPlay
+                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).CarPlaySceneDelegate
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.ecki.mrsc.theme
+            UTTypeDescription: MRSC Theme
+            UTTypeConformsTo: [public.json, public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [mrsctheme]
+              public.mime-type: [application/x-mrsc-theme]
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.ecki.mrsc.8spine-module
+            UTTypeDescription: MRSC Server Extension
+            UTTypeConformsTo: [public.plain-text]
+            UTTypeTagSpecification:
+              public.filename-extension: [8spine]
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: MRSC Theme
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Owner
+            LSItemContentTypes: [com.ecki.mrsc.theme]
+          - CFBundleTypeName: MRSC Server Extension
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [com.ecki.mrsc.8spine-module]
+        CFBundleURLTypes:
+          - CFBundleURLName: com.ecki.mrsc
+            CFBundleURLSchemes: [mrsc, eightspine]
+    sources: [MRSC, Shared]
+    dependencies:
+      - target: MRSCWidgets
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ecki.mrsc
+        DEVELOPMENT_TEAM: F6L6CQBQGR
+        SWIFT_VERSION: 6.0
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        SWIFT_APPROACHABLE_CONCURRENCY: YES
+        TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIcon-Orange AppIcon-Green AppIcon-Blue AppIcon-Violet AppIcon-Black"
+        CODE_SIGN_ENTITLEMENTS: MRSC/MRSC.entitlements
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]": MRSC/MRSC-Simulator.entitlements
+  MRSCWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "26.0"
+    info:
+      path: MRSCWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: MRSC
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    sources: [MRSCWidgets, Shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ecki.mrsc.widgets
+        DEVELOPMENT_TEAM: F6L6CQBQGR
+        SWIFT_VERSION: 6.0
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        SWIFT_APPROACHABLE_CONCURRENCY: YES
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_ENTITLEMENTS: MRSCWidgets/MRSCWidgets.entitlements
+        SKIP_INSTALL: YES

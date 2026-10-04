@@ -1,0 +1,7 @@
+# Search engines and AI assistants are welcome to read and cite this site.
+User-agent: *
+Allow: /
+Disallow: /tools/
+Disallow: /screenshots/
+
+Sitemap: https://mrsc.pages.dev/sitemap.xml

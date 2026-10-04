@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+
+# Build output
+build/
+.build/
+DerivedData/
+*.xcarchive
+*.ipa
+
+# The Xcode project is generated from project.yml (run `xcodegen generate`)
+MRSC.xcodeproj/
+xcuserdata/
+
+# Private: server extensions are never part of this repo
+Modules/
+*.8spine
+
+# Local tooling and working notes
+.claude/
+docs/onboarding-gauntlet.md
+
+# Website: raw screenshots (~100 MB) and the deploy folder
+website/screenshots/
+website/dist/
+
+# Branding work in progress. Only the wordmark is needed to build the app and the site.
+Branding/*
+!Branding/wordmark/
