@@ -7,10 +7,10 @@ MRSC is a free, offline music player for iPhone, built for iOS 26 with Liquid Gl
 [Website](https://mrsc.pages.dev) · [Discord](https://discord.gg/kZTTJxjvQW) · [Buy a coffee](https://ko-fi.com/henrikkk)
 
 <p align="center">
-  <img src="website/img/player-mrsc.webp" width="200" alt="The player">
-  <img src="website/img/home-mrsc.webp" width="200" alt="Home">
-  <img src="website/img/lyrics.webp" width="200" alt="Word-by-word lyrics">
-  <img src="website/img/customize.webp" width="200" alt="Customize">
+  <img src="website/img/player-mrsc.webp" width="180" alt="The player">
+  <img src="website/img/home-mrsc.webp" width="180" alt="Home">
+  <img src="website/img/lyrics.webp" width="180" alt="Word-by-word lyrics">
+  <img src="website/img/customize.webp" width="180" alt="Customize">
 </p>
 
 ## What's in it
