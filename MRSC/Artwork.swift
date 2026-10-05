@@ -114,7 +114,7 @@ struct ArtworkView: View {
                 HStack(spacing: 0) { cell(cells[0]); cell(cells[1]) }
                 HStack(spacing: 0) { cell(cells[2]); cell(cells[3]) }
             }
-        } else if let first = tracks.first(where: { $0.hasArtwork }), let image = ArtworkCache.image(for: first, maxPixel: animated ? 0 : maxPixel) {
+        } else if let (first, image) = firstCachedArtwork {
             Image(uiImage: image).resizable().scaledToFill()
                 .overlay {
                     if animated, let link = first.motionArtworkURL, let url = URL(string: link) { MotionCover(url: url) }
@@ -122,6 +122,14 @@ struct ArtworkView: View {
         } else {
             placeholder(seed: seed, symbol: symbol)
         }
+    }
+
+    /// A missing file for the first song must not hide a usable cover from another song on the album.
+    private var firstCachedArtwork: (Track, UIImage)? {
+        for track in tracks {
+            if let image = ArtworkCache.image(for: track, maxPixel: animated ? 0 : maxPixel) { return (track, image) }
+        }
+        return nil
     }
 
     private func cell(_ track: Track) -> some View {

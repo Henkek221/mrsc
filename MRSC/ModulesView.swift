@@ -366,6 +366,8 @@ struct ModuleResultRow: View {
     @Environment(DownloadManager.self) private var downloads
     let track: ModuleTrack
     var others: [ModuleTrack] = []
+    var subtitle: String? = nil
+    var onPlay: (() -> Void)? = nil
     @State private var picking: [UUID]?
     @State private var artistPage: String?
 
@@ -373,8 +375,11 @@ struct ModuleResultRow: View {
         let saved = library.moduleTrack(track)
         HStack(spacing: 12) {
             Button {
-                let queue = [track] + others.filter { $0.id != track.id }.prefix(30)
-                player.play(library.addModuleTracks(queue), title: "Search")
+                if let onPlay { onPlay() }
+                else {
+                    let queue = [track] + others.filter { $0.id != track.id }.prefix(30)
+                    player.play(library.addModuleTracks(queue), title: "Search")
+                }
             } label: {
                 HStack(spacing: 12) {
                     AsyncImage(url: track.cover.flatMap(URL.init(string:))) { $0.resizable().scaledToFill() } placeholder: {
@@ -384,7 +389,7 @@ struct ModuleResultRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8 * ThemeStore.shared.current.cornerScale, style: .continuous))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(track.title).font(.system(size: 16, weight: .medium)).lineLimit(1).foregroundStyle(.primary)
-                        Text("\(track.artist)" + (track.duration > 0 ? " • \(formatTime(track.duration))" : "")).font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
+                        Text(subtitle ?? (track.artist + (track.duration > 0 ? " • \(formatTime(track.duration))" : ""))).font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer(minLength: 0)
                 }
@@ -525,111 +530,12 @@ struct ModuleInstallSheet: View {
 
 // MARK: - Artist from extensions
 
-/// All songs the extensions offer for one artist, under a header with who they are (photo and basics from Wikipedia).
-/// Opened from "Show Artist" or the Artists section in Search.
+/// Compatibility entry point for extension search and song menus.
+/// Every artist now opens the same page, including local files and music servers.
 struct ModuleArtistView: View {
-    @Environment(LibraryStore.self) private var library
-    @Environment(PlayerModel.self) private var player
-    @Environment(AppSettings.self) private var settings
     let name: String
-    @State private var tracks: [ModuleTrack] = []
-    @State private var loading = true
-    @State private var about: AboutInfo?
-    @State private var titleShown = false
 
     var body: some View {
-        List {
-            header
-                .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 14, trailing: 20))
-            if loading && tracks.isEmpty {
-                HStack { ProgressView(); Text("Loading songs…").foregroundStyle(.secondary) }
-            } else if tracks.isEmpty {
-                ContentUnavailableView("No songs found", systemImage: "music.note", description: Text("No extension has songs by \(name)."))
-                    .listRowSeparator(.hidden)
-            }
-            ForEach(tracks) { ModuleResultRow(track: $0, others: tracks) }
-            if let about {
-                AboutCard(info: about)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 24, leading: 20, bottom: 12, trailing: 20))
-            }
-        }
-        .listStyle(.plain)
-        .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y + $0.contentInsets.top > (about?.imageURL == nil ? 90 : 260) } action: { _, shown in
-            withAnimation(.easeOut(duration: 0.2)) { titleShown = shown }
-        }
-        .navigationTitle(titleShown ? name : "")
-        .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
-        .task(id: name) {
-            let info = await AboutInfo.artist(name, settings: settings)
-            withAnimation(.smooth) { about = info }
-        }
-    }
-
-    private var header: some View {
-        VStack(spacing: 14) {
-            if let url = about?.imageURL {
-                AsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: { Color.primary.opacity(0.06) }
-                    .frame(width: 168, height: 168)
-                    .clipShape(Circle())
-                    .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
-                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
-                    .accessibilityHidden(true)
-            }
-            VStack(spacing: 4) {
-                Text(name)
-                    .font(.system(size: 30, weight: .bold))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                if let line = subtitle {
-                    Text(line)
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-            }
-            if !tracks.isEmpty {
-                HStack(spacing: 12) {
-                    Button { play(shuffled: false) } label: {
-                        Label("Play", systemImage: "play.fill").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.glassProminent)
-                    Button { play(shuffled: true) } label: {
-                        Label("Shuffle", systemImage: "shuffle").frame(maxWidth: .infinity).foregroundStyle(Theme.accent)
-                    }
-                    .buttonStyle(.glass)
-                }
-                .font(.system(size: 17, weight: .semibold))
-                .controlSize(.large)
-                .tint(Theme.accent)
-                .padding(.top, 6)
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    /// "Formed 1988 in Sacramento · 24 songs"
-    private var subtitle: String? {
-        var parts = about?.facts ?? []
-        if !tracks.isEmpty { parts.append(songCount(tracks.count)) }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    private func play(shuffled: Bool) {
-        let list = library.addModuleTracks(tracks)
-        player.play(list, title: name, shuffled: shuffled)
-    }
-
-    private func load() async {
-        let key = SmartSearch.norm(name)
-        var out: [ModuleTrack] = []
-        var seen = Set<String>()
-        for (_, found) in await ModuleStore.shared.search(name, limit: 50) {
-            for t in found where SmartSearch.norm(t.artist).contains(key) && seen.insert("\(t.moduleID)|\(t.trackID)").inserted { out.append(t) }
-        }
-        tracks = out
-        loading = false
+        ArtistDetailView(name: name)
     }
 }

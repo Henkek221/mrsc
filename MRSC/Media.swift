@@ -192,7 +192,8 @@ final class DownloadManager {
     }
 
     private(set) var states: [UUID: State] = [:]
-    @ObservationIgnored private var queue: [UUID] = []
+    private(set) var queue: [UUID] = []
+    private(set) var runningIDs: [UUID] = []
     @ObservationIgnored private var running = 0
     @ObservationIgnored let library: LibraryStore
     @ObservationIgnored let sources: SourceManager
@@ -207,13 +208,25 @@ final class DownloadManager {
     func state(_ id: UUID) -> State? { states[id] }
 
     func download(_ tracks: [Track]) {
+        var added: [UUID] = []
         for t in tracks where t.isRemote && !t.isDownloaded {
             // Failed downloads can be tried again; queued/running ones are left alone.
             if let s = states[t.id], !s.isFailed { continue }
             states[t.id] = .queued
             queue.append(t.id)
+            added.append(t.id)
         }
+        library.rememberDownloads(added)
         pump()
+    }
+
+    /// The view passes IDs from its displayed snapshot: downloads may start during a drag.
+    func setQueueOrder(_ ids: [UUID]) {
+        let pending = Set(queue)
+        var seen = Set<UUID>()
+        let reordered = ids.filter { pending.contains($0) && seen.insert($0).inserted }
+        queue = reordered + queue.filter { !seen.contains($0) }
+        library.setDownloadOrder(queue)
     }
 
     func cancelAll() {
@@ -232,9 +245,12 @@ final class DownloadManager {
             let id = queue.removeFirst()
             guard let track = library.trackByID[id] else { states[id] = nil; continue }
             running += 1
+            runningIDs.append(id)
+            states[id] = .downloading(0)
             Task {
                 await run(track)
                 running -= 1
+                runningIDs.removeAll { $0 == id }
                 pump()
             }
         }
@@ -280,13 +296,15 @@ extension LibraryStore {
     @discardableResult
     func addModuleTrack(_ m: ModuleTrack, keep: Bool = false) -> Track {
         if let existing = moduleTrack(m) {
+            let enriched = m.enriching(existing)
+            if enriched != existing {
+                update(existing.id) { $0 = enriched }
+                Task { await ArtworkFetcher.shared.fetchModuleCovers(library: self) }
+            }
             if keep { self.keep([existing.id]) }
             return trackByID[existing.id] ?? existing
         }
-        var t = Track(title: m.title, artist: m.artist, album: m.album, duration: m.duration, path: "")
-        t.sourceID = "module:\(m.moduleID)"
-        t.remoteID = m.trackID
-        t.artworkURL = m.cover
+        let t = m.previewTrack
         if keep { upsert([t]) } else { addHeard(t) }
         Task { await ArtworkFetcher.shared.fetchModuleCovers(library: self) }
         return t
@@ -297,21 +315,22 @@ extension LibraryStore {
     func addModuleTracks(_ list: [ModuleTrack]) -> [Track] {
         var out: [Track] = []
         var fresh: [Track] = []
+        var enriched: [Track] = []
         var seen: [String: Track] = [:]
         for m in list {
             let key = "\(m.moduleID)|\(m.trackID)"
             if let t = seen[key] { out.append(t); continue }
             if let existing = moduleTrack(m) {
-                seen[key] = existing; out.append(existing); continue
+                let track = m.enriching(existing)
+                if track != existing { enriched.append(track) }
+                seen[key] = track; out.append(track); continue
             }
-            var t = Track(title: m.title, artist: m.artist, album: m.album, duration: m.duration, path: "")
-            t.sourceID = "module:\(m.moduleID)"
-            t.remoteID = m.trackID
-            t.artworkURL = m.cover
+            let t = m.previewTrack
             seen[key] = t; fresh.append(t); out.append(t)
         }
-        if !fresh.isEmpty {
-            addHeard(fresh)
+        if !enriched.isEmpty { replace(enriched) }
+        if !fresh.isEmpty { addHeard(fresh) }
+        if !fresh.isEmpty || !enriched.isEmpty {
             Task { await ArtworkFetcher.shared.fetchModuleCovers(library: self) }
         }
         return out

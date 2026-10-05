@@ -2,7 +2,8 @@ import SwiftUI
 
 // MARK: - See what it can do
 
-/// "See what it can do": five calm pages in the website's look. One headline, one line, one thing to touch.
+/// "See what it can do": five pages in the App Store look. One headline, one line, one thing to touch.
+/// The page color changes from white to wine to red.
 struct TourDeck: View {
     var onFinish: () -> Void
     @State private var page = 0
@@ -13,16 +14,20 @@ struct TourDeck: View {
 
     var body: some View {
         ZStack {
-            (current.onRed ? Theme.accent : Color(uiColor: .systemBackground))
-                .ignoresSafeArea()
-                .animation(.smooth(duration: 0.45), value: page)
+            ZStack {
+                ForEach(pages) { p in
+                    p.tone.background.opacity(p == current ? 1 : 0)
+                }
+            }
+            .ignoresSafeArea()
+            .animation(.smooth(duration: 0.5), value: page)
 
             VStack(spacing: 0) {
                 HStack {
                     Spacer()
                     Button("Skip") { onFinish() }
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(current.onRed ? .white.opacity(0.8) : Site.ink2)
+                        .foregroundStyle(current.tone.colored ? .white.opacity(0.8) : Site.ink2)
                         .opacity(isLast ? 0 : 1)
                 }
                 .padding(.horizontal, 20)
@@ -35,8 +40,8 @@ struct TourDeck: View {
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
 
-                PageDots(count: pages.count, current: page, onRed: current.onRed)
-                SitePill(isLast ? "Add my music" : "Next", onRed: current.onRed) {
+                PageDots(count: pages.count, current: page, onRed: current.tone.colored)
+                SitePill(isLast ? "Add my music" : "Next", onRed: current.tone.colored) {
                     if isLast { onFinish() }
                     else { withAnimation(.spring(duration: 0.5, bounce: 0.15)) { page += 1 } }
                 }
@@ -52,8 +57,13 @@ enum TourPage: Int, CaseIterable, Identifiable {
     case themes, lyrics, search, mix, leftOut
     var id: Int { rawValue }
 
-    /// Only the last page is red, like the website's "Things we left out".
-    var onRed: Bool { self == .leftOut }
+    var tone: PageTone {
+        switch self {
+        case .themes, .mix: .paper
+        case .lyrics: .wine
+        case .search, .leftOut: .red
+        }
+    }
 
     var title: String {
         switch self {
@@ -87,16 +97,18 @@ private struct TourPageView: View {
                 LeftOutPage(active: active)
             } else {
                 VStack(spacing: 0) {
-                    VStack(spacing: 14) {
+                    VStack(spacing: 16) {
                         headline
                         Text(page.text)
-                            .siteLede(17)
+                            .font(.system(size: 17, weight: page.tone.colored ? .semibold : .medium))
+                            .tracking(-0.27)
+                            .foregroundStyle(page.tone.lede)
                             .textRenderer(BlurReveal(progress: shown ? 1 : 0))
                     }
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 30)
-                    .padding(.top, 16)
+                    .padding(.horizontal, 28)
+                    .padding(.top, 12)
 
                     Spacer(minLength: 24)
                     object
@@ -110,23 +122,18 @@ private struct TourPageView: View {
         }
     }
 
-    @ViewBuilder private var headline: some View {
-        if page == .themes {
-            Text("Customize the \(Text("shit").foregroundStyle(Theme.accent).customAttribute(Swear())) out of it.")
-                .siteHeadline(36)
-                .textRenderer(BrushUnderline(progress: shown ? 1 : 0, color: Theme.accent))
-        } else {
-            Text(page.title)
-                .siteHeadline(36)
-                .textRenderer(BlurReveal(progress: shown ? 1 : 0))
-        }
+    private var headline: some View {
+        Text(page.title)
+            .heroHeadline(38)
+            .foregroundStyle(page.tone.ink)
+            .textRenderer(BlurReveal(progress: shown ? 1 : 0))
     }
 
     @ViewBuilder private var object: some View {
         switch page {
         case .themes: ThemeCrate()
-        case .lyrics: LyricsLines(active: active)
-        case .search: SearchPill(active: active)
+        case .lyrics: LyricsLines(active: active, onColor: true)
+        case .search: SearchPill(active: active, onColor: true)
         case .mix: MixFader(active: active)
         case .leftOut: EmptyView()
         }
@@ -150,44 +157,6 @@ private struct PageDots: View {
         .animation(.spring(duration: 0.4, bounce: 0.3), value: current)
         .accessibilityElement()
         .accessibilityLabel("Page \(current + 1) of \(count)")
-    }
-}
-
-// MARK: - Brush underline
-
-/// Marks the word that gets the brush stroke.
-private struct Swear: TextAttribute {}
-
-/// Draws the text, then the website's red brush stroke under the word marked `Swear`.
-private struct BrushUnderline: TextRenderer, Animatable {
-    var progress: Double
-    var color: Color
-
-    var animatableData: Double {
-        get { progress }
-        set { progress = newValue }
-    }
-
-    func draw(layout: Text.Layout, in ctx: inout GraphicsContext) {
-        for line in layout {
-            for run in line {
-                ctx.draw(run)
-                guard run[Swear.self] != nil, progress > 0 else { continue }
-                let b = run.typographicBounds
-                let em = b.ascent + b.descent
-                let x0 = b.rect.minX - b.rect.width * 0.02
-                let w = b.rect.width * 1.04
-                let top = b.origin.y + em * 0.02
-                let h = em * 0.3
-                // The website's path, M6 26 C120 12 300 38 474 18 in a 480×40 box.
-                func p(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: x0 + x / 480 * w, y: top + y / 40 * h) }
-                var path = Path()
-                path.move(to: p(6, 26))
-                path.addCurve(to: p(474, 18), control1: p(120, 12), control2: p(300, 38))
-                ctx.stroke(path.trimmedPath(from: 0, to: progress), with: .color(color.opacity(0.9)),
-                           style: StrokeStyle(lineWidth: em * 0.085, lineCap: .round))
-            }
-        }
     }
 }
 
@@ -285,6 +254,8 @@ private struct ColoredVinyl: View {
 /// One big line on white lighting up word by word in red, the next one waiting underneath.
 private struct LyricsLines: View {
     let active: Bool
+    /// On a colored page the words light up white instead of red.
+    var onColor = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var step = 0
     @State private var lit = 0
@@ -330,12 +301,12 @@ private struct LyricsLines: View {
         var text = AttributedString()
         for (i, word) in words.enumerated() {
             var a = AttributedString(String(word) + (i < words.count - 1 ? " " : ""))
-            a.foregroundColor = current && i < lit ? Theme.accent : Color.primary.opacity(0.18)
+            a.foregroundColor = current && i < lit ? (onColor ? Color.white : Theme.accent) : (onColor ? Color.white.opacity(0.24) : Color.primary.opacity(0.18))
             text += a
         }
         return Text(text)
-            .font(.system(size: 30, weight: .bold))
-            .tracking(-0.8)
+            .font(.system(size: 31, weight: .heavy))
+            .tracking(-1.1)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -345,6 +316,8 @@ private struct LyricsLines: View {
 /// A query types itself into the search pill and comes back as one or two strips of embossed tape.
 private struct SearchPill: View {
     let active: Bool
+    /// On a red page: a white card with dark type, and black and white tapes instead of red ones.
+    var onColor = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var typed = ""
     @State private var tapes: [Tape] = []
@@ -370,6 +343,7 @@ private struct SearchPill: View {
                     .foregroundStyle(Theme.accent)
                 Text(typed)
                     .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(onColor ? Color.black : Color.primary)
                     .lineLimit(1)
                 TimelineView(.periodic(from: .now, by: 0.5)) { ctx in
                     Capsule().fill(Theme.accent)
@@ -380,14 +354,15 @@ private struct SearchPill: View {
             }
             .padding(.horizontal, 20)
             .frame(height: 56)
-            .background(Site.card, in: Capsule())
-            .overlay { Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5) }
-            .shadow(color: .black.opacity(0.1), radius: 18, y: 12)
+            .background(onColor ? Color.white : Site.card, in: Capsule())
+            .overlay { Capsule().strokeBorder(Color.primary.opacity(onColor ? 0 : 0.08), lineWidth: 0.5) }
+            .shadow(color: .black.opacity(onColor ? 0.2 : 0.1), radius: 18, y: 12)
             .padding(.horizontal, 30)
 
             HStack(spacing: 10) {
                 ForEach(Array(tapes.enumerated()), id: \.element.id) { k, tape in
-                    DymoTape(text: tape.text, color: tape.red ? Theme.accent : Color(white: 0.07))
+                    DymoTape(text: tape.text, color: tape.red ? (onColor ? Color(white: 0.07) : Theme.accent) : (onColor ? Color.white : Color(white: 0.07)),
+                             ink: !tape.red && onColor ? Theme.accent : .white)
                         .rotationEffect(.degrees(k.isMultiple(of: 2) ? -2.5 : 2))
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
@@ -430,12 +405,13 @@ private struct SearchPill: View {
 private struct DymoTape: View {
     let text: String
     let color: Color
+    var ink: Color = .white
 
     var body: some View {
         Text(text.uppercased())
             .font(.system(size: 14, weight: .heavy))
             .tracking(14 * 0.14)
-            .foregroundStyle(.white)
+            .foregroundStyle(ink)
             .shadow(color: .black.opacity(0.7), radius: 0, x: 0, y: -1)
             .shadow(color: .white.opacity(0.28), radius: 0, x: 0, y: 1)
             .lineLimit(1)
@@ -553,8 +529,8 @@ private struct LeftOutPage: View {
                 .padding(.bottom, 24)
             ForEach(Self.lines.indices, id: \.self) { i in
                 Text(Self.lines[i])
-                    .font(.system(size: 42, weight: .heavy))
-                    .tracking(-1.9)
+                    .font(.system(size: 44, weight: .black))
+                    .tracking(-2)
                     .opacity(i < lit ? 1 : 0.28)
                     .padding(.top, i == Self.lines.count - 1 ? 22 : 0)
             }

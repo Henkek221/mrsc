@@ -41,6 +41,13 @@ final class NowPlayingArtwork {
     private var square: MPMediaItemArtwork?
     private var tallKey = ""
     private var tall: MPMediaItemAnimatedArtwork?
+    private var tallJob: LockArtJob?
+    private var tallGeneration = 0
+
+    func invalidateFullscreen() {
+        tall = nil
+        tallGeneration += 1
+    }
 
     static var supportsFullscreen: Bool {
         MPNowPlayingInfoCenter.supportedAnimatedArtworkKeys.contains(MPNowPlayingInfoProperty3x4AnimatedArtwork)
@@ -57,16 +64,23 @@ final class NowPlayingArtwork {
 
     /// The tall, full-screen Lock Screen artwork, rendered as a short looping video from the cover.
     func fullscreen(for t: Track, settings: AppSettings) -> MPMediaItemAnimatedArtwork? {
-        guard settings.lockArtwork, Self.supportsFullscreen else { tallKey = ""; tall = nil; return nil }
+        guard settings.lockArtwork, Self.supportsFullscreen else { tall = nil; return nil }
         let style = LockArtStyle(layout: settings.lockArtLayout, motion: settings.lockArtMotion)
         let key = "\(Self.key(t))-\(style.id)"
-        if key == tallKey { return tall }
-        tallKey = key
-        tall = Self.cover(t)?.cgImage.map { Self.makeAnimated(LockArtJob(key: key, cover: $0, style: style)) }
+        if key == tallKey, let tall { return tall }
+        if key != tallKey {
+            tallKey = key
+            tallJob = Self.cover(t)?.cgImage.map { LockArtJob(key: key, cover: $0, style: style) }
+        }
+        guard let job = tallJob else { return nil }
+        // Prepare local assets before the screen locks, rather than starting the encoder
+        // only when the system first asks for a video in the background. Reuse any in-flight job.
+        Task { await job.prepare() }
+        tall = Self.makeAnimated(job, artworkID: "\(key)-request-\(tallGeneration)")
         return tall
     }
 
-    private static func key(_ t: Track) -> String { "\(t.id.uuidString)-\(t.artVersion ?? 0)" }
+    private static func key(_ t: Track) -> String { "\(t.id.uuidString)-\(t.artVersion ?? 0)-\(t.hasArtwork)" }
 
     private static func cover(_ t: Track) -> UIImage? {
         ArtworkCache.image(for: t) ?? CoverKit.image(CoverKit.auto(t.album + t.artist), side: 1000)
@@ -77,8 +91,8 @@ final class NowPlayingArtwork {
     }
 
     /// Kept nonisolated: the system calls these handlers on its own queues.
-    nonisolated private static func makeAnimated(_ job: LockArtJob) -> MPMediaItemAnimatedArtwork {
-        MPMediaItemAnimatedArtwork(artworkID: job.key) { _, done in
+    nonisolated private static func makeAnimated(_ job: LockArtJob, artworkID: String) -> MPMediaItemAnimatedArtwork {
+        MPMediaItemAnimatedArtwork(artworkID: artworkID) { _, done in
             // Called exactly once, from any queue (see MPMediaItemAnimatedArtwork).
             nonisolated(unsafe) let done = done
             Task { done(await job.preview()) }
@@ -97,18 +111,21 @@ nonisolated struct LockArtStyle: Hashable, Sendable {
     var id: String { "\(layout.rawValue)-\(motion.rawValue)-v\(LockArtRenderer.version)" }
 }
 
-/// Renders the preview frame and the video lazily, once, off the main thread.
+/// Prepares and reuses the preview and video off the main thread; failed renders can be retried.
 actor LockArtJob {
     nonisolated let key: String
     private let cover: CGImage
     private let style: LockArtStyle
     private var renderer: LockArtRenderer?
     private var rendering: Task<URL?, Never>?
+    private var previewImage: UIImage?
+    private let asset: LockArtAsset?
 
     init(key: String, cover: CGImage, style: LockArtStyle) {
         self.key = key
         self.cover = cover
         self.style = style
+        asset = LockArtRenderer.cacheDir.map { LockArtAsset(url: $0.appendingPathComponent("\(key).mp4")) }
     }
 
     private func make() -> LockArtRenderer {
@@ -118,24 +135,89 @@ actor LockArtJob {
         return r
     }
 
-    func preview() -> UIImage? { make().frame(at: 0).map(UIImage.init(cgImage:)) }
+    func preview() -> UIImage? {
+        if let previewImage { return previewImage }
+        previewImage = make().frame(at: 0).map(UIImage.init(cgImage:))
+        return previewImage
+    }
+
+    func prepare() async {
+        _ = preview()
+        _ = await video()
+    }
 
     func video() async -> URL? {
         if let rendering { return await rendering.value }
-        guard let dir = LockArtRenderer.cacheDir else { return nil }
-        let url = dir.appendingPathComponent("\(key).mp4")
+        guard let url = asset?.url else { return nil }
         if FileManager.default.fileExists(atPath: url.path) { return url }
         let r = make()
         let task = Task.detached(priority: .utility) { await r.writeVideo(to: url) ? url : nil }
         rendering = task
-        return await task.value
+        // Give an in-flight render time to finish if the user locks the phone while paused.
+        let background = await LockArtBackgroundTask(rendering: task)
+        let result = await task.value
+        await background.end()
+        rendering = nil // A failed attempt must not poison all subsequent requests.
+        return result
+    }
+}
+
+@MainActor
+private final class LockArtBackgroundTask {
+    private var identifier = UIBackgroundTaskIdentifier.invalid
+
+    init(rendering: Task<URL?, Never>) {
+        identifier = UIApplication.shared.beginBackgroundTask(withName: "Lock Screen Artwork") { [weak self] in
+            rendering.cancel()
+            self?.end()
+        }
+    }
+
+    func end() {
+        guard identifier != .invalid else { return }
+        let active = identifier
+        identifier = .invalid
+        UIApplication.shared.endBackgroundTask(active)
+    }
+}
+
+/// The request handlers retain the job, so its file must survive cache pruning for that lifetime.
+nonisolated final class LockArtAsset: @unchecked Sendable {
+    let url: URL
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var retained: [URL: Int] = [:]
+
+    init(url: URL) {
+        self.url = url
+        Self.lock.withLock { Self.retained[url, default: 0] += 1 }
+    }
+
+    deinit {
+        Self.lock.withLock {
+            let count = (Self.retained[url] ?? 1) - 1
+            Self.retained[url] = count > 0 ? count : nil
+        }
+    }
+
+    static func prune(in dir: URL) {
+        lock.withLock {
+            let fm = FileManager.default
+            let files = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+            let unused = files.filter { $0.pathExtension == "mp4" && retained[$0] == nil }
+            let old = unused.sorted {
+                let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return a > b
+            }.dropFirst(6)
+            for file in old { try? fm.removeItem(at: file) }
+        }
     }
 }
 
 nonisolated struct LockArtRenderer: Sendable {
     static let width = 1080, height = 1440
     /// Bump when the drawing changes, so cached loops are rebuilt.
-    static let version = 2
+    static let version = 3
 
     let cover: CGImage
     let backdrop: CGImage?
@@ -219,12 +301,16 @@ nonisolated struct LockArtRenderer: Sendable {
             .applyingGaussianBlur(sigma: Double(image.width) * 0.04)
             .applyingFilter("CIColorControls", parameters: [kCIInputBrightnessKey: -0.18, kCIInputSaturationKey: 1.2])
             .cropped(to: input.extent)
-        return CIContext(options: [.cacheIntermediates: false]).createCGImage(output, from: input.extent)
+        // A Lock Screen request can arrive while the app is in the background, where GPU work
+        // is unavailable. The backdrop is rendered only once per job.
+        return CIContext(options: [.cacheIntermediates: false, .useSoftwareRenderer: true]).createCGImage(output, from: input.extent)
     }
 
     func writeVideo(to url: URL) async -> Bool {
-        let tmp = url.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".mp4")
+        let tmp = url.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".rendering")
+        defer { try? FileManager.default.removeItem(at: tmp) }
         guard let writer = try? AVAssetWriter(outputURL: tmp, fileType: .mp4) else { return false }
+        defer { if writer.status == .writing { writer.cancelWriting() } }
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: Self.width,
@@ -245,37 +331,38 @@ nonisolated struct LockArtRenderer: Sendable {
         let fps = style.motion.fps
         let count = Int(style.motion.loop * Double(fps))
         for i in 0..<count {
-            while !input.isReadyForMoreMediaData { try? await Task.sleep(for: .milliseconds(5)) }
-            guard let pool = adaptor.pixelBufferPool else { break }
-            var buffer: CVPixelBuffer?
-            CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
-            guard let buffer else { break }
-            CVPixelBufferLockBaseAddress(buffer, [])
-            if let ctx = CGContext(data: CVPixelBufferGetBaseAddress(buffer), width: Self.width, height: Self.height, bitsPerComponent: 8,
-                                   bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: CGColorSpaceCreateDeviceRGB(),
-                                   bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) {
-                draw(in: ctx, at: Double(i) / Double(fps))
+            let deadline = ContinuousClock.now + .seconds(10)
+            while !input.isReadyForMoreMediaData {
+                guard writer.status == .writing, !Task.isCancelled, ContinuousClock.now < deadline else { return false }
+                do { try await Task.sleep(for: .milliseconds(5)) } catch { return false }
             }
+            guard writer.status == .writing, !Task.isCancelled, let pool = adaptor.pixelBufferPool else { return false }
+            var buffer: CVPixelBuffer?
+            guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer) == kCVReturnSuccess, let buffer else { return false }
+            guard CVPixelBufferLockBaseAddress(buffer, []) == kCVReturnSuccess else { return false }
+            guard let ctx = CGContext(data: CVPixelBufferGetBaseAddress(buffer), width: Self.width, height: Self.height, bitsPerComponent: 8,
+                                   bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: CGColorSpaceCreateDeviceRGB(),
+                                   bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else {
+                CVPixelBufferUnlockBaseAddress(buffer, [])
+                return false
+            }
+            draw(in: ctx, at: Double(i) / Double(fps))
             CVPixelBufferUnlockBaseAddress(buffer, [])
-            adaptor.append(buffer, withPresentationTime: CMTime(value: Int64(i), timescale: fps))
+            guard adaptor.append(buffer, withPresentationTime: CMTime(value: Int64(i), timescale: fps)) else { return false }
         }
+        guard !Task.isCancelled else { return false }
         input.markAsFinished()
         writer.endSession(atSourceTime: CMTime(value: Int64(count), timescale: fps))
         await writer.finishWriting()
-        guard writer.status == .completed else { try? FileManager.default.removeItem(at: tmp); return false }
+        guard writer.status == .completed else { return false }
 
         let fm = FileManager.default
         try? fm.removeItem(at: url)
         guard (try? fm.moveItem(at: tmp, to: url)) != nil else { return false }
-        // Keep only the newest few loops.
-        let dir = url.deletingLastPathComponent()
-        let files = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
-        let old = files.sorted {
-            let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-            let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-            return a > b
-        }.dropFirst(6)
-        for f in old { try? fm.removeItem(at: f) }
+        // The system must be able to read the finished asset while the device is locked.
+        do { try fm.setAttributes([.protectionKey: FileProtectionType.none], ofItemAtPath: url.path) }
+        catch { try? fm.removeItem(at: url); return false }
+        LockArtAsset.prune(in: url.deletingLastPathComponent())
         return true
     }
 }

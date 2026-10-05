@@ -385,7 +385,13 @@ struct CollectionDetailView: View {
     private func content(_ entry: LibraryEntry) -> some View {
         List {
             VStack(spacing: 12) {
-                ArtworkView(entry: entry, radius: 18)
+                Group {
+                    if kind == .album {
+                        ArtistCatalogArtwork(entry: entry, radius: 18)
+                    } else {
+                        ArtworkView(entry: entry, radius: 18)
+                    }
+                }
                     .frame(width: 210, height: 210)
                     .shadow(color: .black.opacity(0.2), radius: 16, y: 8)
                 VStack(spacing: 3) {

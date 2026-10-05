@@ -18,13 +18,16 @@ enum Site {
     /// White cards that lift off the page (the search pill).
     static let card = dynamic(0xFFFFFF, 0x2C2C2E)
 
+    /// The provider runs on whatever thread SwiftUI renders on, so it must not be tied to the main actor.
     static func dynamic(_ light: UInt32, _ dark: UInt32) -> Color {
-        Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(siteRGB: dark) : UIColor(siteRGB: light) })
+        Color(uiColor: UIColor { @Sendable traits in
+            traits.userInterfaceStyle == .dark ? UIColor(siteRGB: dark) : UIColor(siteRGB: light)
+        })
     }
 }
 
 private extension UIColor {
-    convenience init(siteRGB v: UInt32) {
+    nonisolated convenience init(siteRGB v: UInt32) {
         self.init(red: CGFloat(v >> 16 & 0xFF) / 255, green: CGFloat(v >> 8 & 0xFF) / 255, blue: CGFloat(v & 0xFF) / 255, alpha: 1)
     }
 }
@@ -44,13 +47,17 @@ extension View {
 /// The website's top bar: the icon and the name on the left, one quiet action on the right.
 struct SiteNav<Trailing: View>: View {
     @AppStorage(BrandStyle.key) private var brand = BrandStyle.red.rawValue
+    /// On a red page the icon turns white with red letters and the name turns white.
+    var onRed = false
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
+        let brandColor = (BrandStyle(rawValue: brand) ?? .red).color
         HStack(spacing: 9) {
-            AppIconMark(color: (BrandStyle(rawValue: brand) ?? .red).color)
+            AppIconMark(color: onRed ? .white : brandColor, ink: onRed ? brandColor : .white)
                 .frame(width: 28, height: 28)
             Text("MRSC")
+                .foregroundStyle(onRed ? .white : .primary)
                 .font(.system(size: 18, weight: .bold))
                 .tracking(-0.36)
             Spacer(minLength: 12)
@@ -64,12 +71,13 @@ struct SiteNav<Trailing: View>: View {
 /// The app icon drawn live: the brand colour and the brushed MR/SC letters from the splash.
 struct AppIconMark: View {
     var color: Color = BrandStyle.current.color
+    var ink: Color = .white
 
     var body: some View {
         GeometryReader { g in
             ZStack {
                 RoundedRectangle(cornerRadius: g.size.width * 0.225, style: .continuous).fill(color)
-                ForEach(BrushLetter.all.indices, id: \.self) { i in BrushLetter.all[i].fill(.white) }
+                ForEach(BrushLetter.all.indices, id: \.self) { i in BrushLetter.all[i].fill(ink) }
             }
         }
         .aspectRatio(1, contentMode: .fit)
@@ -103,15 +111,51 @@ struct SitePill: View {
     }
 }
 
+// MARK: - App Store look
+
+/// The three page colors of the onboarding, as in the App Store screenshots.
+enum PageTone {
+    case paper, red, wine
+
+    var colored: Bool { self != .paper }
+    /// Headlines and ledes.
+    var ink: Color { colored ? .white : .primary }
+    var lede: Color { colored ? .white.opacity(0.86) : Site.ink2 }
+
+    @ViewBuilder var background: some View {
+        switch self {
+        case .paper: Color(uiColor: .systemBackground)
+        case .red:
+            ZStack {
+                LinearGradient(colors: [Theme.accent.mix(with: .white, by: 0.08), Theme.accent, Theme.accent.mix(with: .black, by: 0.12)],
+                               startPoint: .top, endPoint: .bottom)
+                RadialGradient(colors: [.white.opacity(0.22), .clear], center: UnitPoint(x: 0.5, y: 0.6), startRadius: 0, endRadius: 360)
+            }
+        case .wine:
+            ZStack {
+                LinearGradient(colors: [Theme.accent.mix(with: .black, by: 0.32), Theme.accent.mix(with: .black, by: 0.58)],
+                               startPoint: .top, endPoint: .bottom)
+                RadialGradient(colors: [Theme.accent.opacity(0.45), .clear], center: UnitPoint(x: 0.5, y: 0.62), startRadius: 0, endRadius: 340)
+            }
+        }
+    }
+}
+
+extension View {
+    /// The App Store headline: black weight, tight tracking.
+    func heroHeadline(_ size: CGFloat) -> some View {
+        font(.system(size: size, weight: .black)).tracking(-size * 0.045)
+    }
+}
+
 // MARK: - Welcome
 
 /// First run, laid out like the website's hero: the record you can spin, a red kicker, the big line, a red pill.
-/// "See what it can do" pages through four features first; both roads end at the sleeves.
+/// "See what it can do" pages through four features first; both roads end at "Where's your music?".
 struct OnboardingView: View {
     @Environment(Router.self) private var router
     @Environment(LibraryStore.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var scheme
     @AppStorage("onboarded") private var onboarded = false
 
     private enum Stage { case hello, tour, sources }
@@ -124,7 +168,7 @@ struct OnboardingView: View {
     @State private var ctaIn = false
     @State private var sourcesTitle = false
     @State private var sourcesLede = false
-    @State private var sleevesOut = false
+    @State private var rowsIn = false
     @State private var chosen: OnboardingSource?
 
     // Record physics.
@@ -138,7 +182,9 @@ struct OnboardingView: View {
 
     var body: some View {
         ZStack {
-            Color(uiColor: .systemBackground).ignoresSafeArea()
+            (stage == .hello ? PageTone.red : .paper).background
+                .ignoresSafeArea()
+                .animation(.smooth(duration: 0.5), value: stage)
 
             switch stage {
             case .hello:
@@ -164,7 +210,7 @@ struct OnboardingView: View {
             // The record takes whatever height the copy leaves over.
             let disc = min(geo.size.width * 0.66, 270, max(150, geo.size.height - 490))
             VStack(spacing: 0) {
-                SiteNav { laterButton.opacity(ctaIn ? 1 : 0) }
+                SiteNav(onRed: true) { laterButton(onRed: true).opacity(ctaIn ? 1 : 0) }
 
                 Spacer(minLength: 8)
                 record(size: disc)
@@ -172,18 +218,21 @@ struct OnboardingView: View {
 
                 VStack(spacing: 0) {
                     Text("Free offline music player")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: 17, weight: .bold))
                         .tracking(-0.25)
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(.white.opacity(0.86))
                         .textRenderer(BlurReveal(progress: heroTitle ? 1 : 0))
                     Text("The music player with way too many settings.")
-                        .siteHeadline(38)
+                        .heroHeadline(38)
+                        .foregroundStyle(.white)
                         .textRenderer(BlurReveal(progress: heroTitle ? 1 : 0))
                         .padding(.top, 10)
                     Text("Plays the music you actually own. No ads. No account.")
-                        .siteLede(17)
+                        .font(.system(size: 17, weight: .semibold))
+                        .tracking(-0.27)
+                        .foregroundStyle(.white.opacity(0.86))
                         .textRenderer(BlurReveal(progress: heroLede ? 1 : 0))
-                        .padding(.top, 14)
+                        .padding(.top, 16)
                 }
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -192,14 +241,14 @@ struct OnboardingView: View {
                 Spacer(minLength: 22)
 
                 VStack(spacing: 18) {
-                    SitePill("Play my music") { start() }
+                    SitePill("Play my music", onRed: true) { start() }
                     Button { showTour() } label: {
                         HStack(spacing: 5) {
                             Text("See what it can do")
                             Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold))
                         }
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(Theme.accent)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
                         .frame(height: 30)
                         .contentShape(Rectangle())
                     }
@@ -213,27 +262,27 @@ struct OnboardingView: View {
         }
     }
 
-    private var laterButton: some View {
+    private func laterButton(onRed: Bool = false) -> some View {
         Button("Later") { finish {} }
             .font(.system(size: 15, weight: .medium))
-            .foregroundStyle(Site.ink2)
+            .foregroundStyle(onRed ? .white.opacity(0.8) : Site.ink2)
     }
 
     /// The toy from the website: grab it, spin it, flick it. Floats like the website's hero icon, with the same red glow.
     private func record(size: CGFloat) -> some View {
-        let light = scheme == .light
         return TimelineView(.animation(paused: reduceMotion && dragAngle == nil)) { ctx in
             let t = ctx.date.timeIntervalSinceReferenceDate
             let angle = dragAngle ?? spin.angle(at: ctx.date)
             let float = reduceMotion ? 0 : 3 * (1 - cos(t * .pi / 3))
             ZStack {
+                // Deep red shadow under the record, like the 3D objects on the red pages.
                 Circle()
-                    .fill(Theme.accent)
+                    .fill(Color(red: 0.35, green: 0, blue: 0.08))
                     .frame(width: size * 0.78, height: size * 0.78)
                     .blur(radius: size * 0.16)
-                    .offset(y: size * 0.13)
-                    .opacity(recordIn ? (light ? 0.58 : 0.5) : 0)
-                VinylDisc(angle: .degrees(angle), label: Theme.accent, light: light)
+                    .offset(y: size * 0.16)
+                    .opacity(recordIn ? 0.55 : 0)
+                VinylDisc(angle: .degrees(angle), label: chosen?.color ?? Theme.accent, symbol: chosen?.symbol, light: false)
                     .frame(width: size, height: size)
             }
             .offset(y: -float)
@@ -287,61 +336,87 @@ struct OnboardingView: View {
 
     // MARK: Sources
 
-    /// The website's sleeves on a white page: tap one and its record rolls out.
+    /// The record from the start screen above four plain rows. Pick one and its symbol lands on the label.
     private var sources: some View {
-        VStack(spacing: 0) {
-            SiteNav { laterButton.opacity(chosen == nil ? 1 : 0) }
+        GeometryReader { geo in
+            let disc = min(geo.size.width * 0.42, 170, max(110, geo.size.height - 560))
+            VStack(spacing: 0) {
+                SiteNav { laterButton().opacity(chosen == nil ? 1 : 0) }
 
-            Spacer(minLength: 10)
-            VStack(spacing: 14) {
-                Text("Your music, wherever it’s hiding.")
-                    .siteHeadline(34)
-                    .textRenderer(BlurReveal(progress: sourcesTitle ? 1 : 0))
-                Text(chosen == nil ? "Pick one. You can add the rest later." : "Nice. Getting it ready…")
-                    .siteLede(17)
-                    .contentTransition(.opacity)
-                    .textRenderer(BlurReveal(progress: sourcesLede ? 1 : 0))
-            }
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 28)
-            Spacer(minLength: 20)
+                Spacer(minLength: 8)
+                record(size: disc)
+                Spacer(minLength: 20)
 
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
-                ForEach(Array(OnboardingSource.allCases.enumerated()), id: \.element) { i, source in
-                    sleeve(source, index: i)
+                VStack(spacing: 12) {
+                    Text("Where’s your music?")
+                        .heroHeadline(36)
+                        .textRenderer(BlurReveal(progress: sourcesTitle ? 1 : 0))
+                    Text(chosen == nil ? "Pick one. You can add the rest later." : "Nice. Getting it ready…")
+                        .siteLede(17)
+                        .contentTransition(.opacity)
+                        .textRenderer(BlurReveal(progress: sourcesLede ? 1 : 0))
                 }
-            }
-            // Room on the right for the records peeking out, like the website.
-            .padding(.leading, 28)
-            .padding(.trailing, 64)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 28)
 
-            Button { finish { Task { await library.loadDemo() } } } label: {
-                Text("Or start with the demo library")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Site.ink2)
-                    .frame(height: 44)
+                Spacer(minLength: 20)
+
+                VStack(spacing: 10) {
+                    ForEach(Array(OnboardingSource.allCases.enumerated()), id: \.element) { i, source in
+                        sourceRow(source, index: i)
+                    }
+                }
+                .padding(.horizontal, 20)
+
+                Button { finish { Task { await library.loadDemo() } } } label: {
+                    Text("Or start with the demo library")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Site.ink2)
+                        .frame(height: 44)
+                }
+                .opacity(rowsIn && chosen == nil ? 1 : 0)
+                .padding(.top, 6)
+                .padding(.bottom, 4)
             }
-            .opacity(sleevesOut && chosen == nil ? 1 : 0)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
         }
     }
 
-    private func sleeve(_ source: OnboardingSource, index i: Int) -> some View {
+    private func sourceRow(_ source: OnboardingSource, index i: Int) -> some View {
         let isChosen = chosen == source
         let other = chosen != nil && !isChosen
         return Button { choose(source) } label: {
-            SleeveTile(source: source, out: sleevesOut, chosen: isChosen)
+            HStack(spacing: 14) {
+                Image(systemName: source.symbol)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .background(source.color.gradient, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(source.title)
+                        .font(.system(size: 17, weight: .semibold))
+                        .tracking(-0.3)
+                        .foregroundStyle(.primary)
+                    Text(source.detail)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Site.ink2)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: isChosen ? "checkmark" : "chevron.right")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(isChosen ? Theme.accent : Color(uiColor: .tertiaryLabel))
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 66)
+            .contentShape(Rectangle())
+            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
-        .buttonStyle(.plain)
-        .opacity(other ? 0.25 : 1)
-        .blur(radius: other ? 4 : 0)
-        .scaleEffect(isChosen ? 1.04 : 1)
-        .offset(y: sleevesOut || reduceMotion ? 0 : 40)
-        .animation(.spring(duration: 0.8, bounce: 0.3).delay(sleevesOut && chosen == nil ? Double(i) * 0.07 : 0), value: sleevesOut)
-        .animation(.spring(duration: 0.6, bounce: 0.25), value: chosen)
-        .zIndex(isChosen ? 10 : 0)
+        .buttonStyle(PressScale())
+        .opacity(rowsIn ? (other ? 0.35 : 1) : 0)
+        .offset(y: rowsIn || reduceMotion ? 0 : 24)
+        .animation(.spring(duration: 0.7, bounce: 0.25).delay(rowsIn && chosen == nil ? Double(i) * 0.06 : 0), value: rowsIn)
+        .animation(.smooth(duration: 0.35), value: chosen)
         .allowsHitTesting(chosen == nil)
         .accessibilityLabel("\(source.title), \(source.detail)")
     }
@@ -364,7 +439,7 @@ struct OnboardingView: View {
         withAnimation(.spring(duration: 0.7, bounce: 0.2)) { ctaIn = true }
     }
 
-    /// "Play my music": the record spins up, then the sleeves come in.
+    /// "Play my music": the record spins up, then the sources come in.
     private func start() {
         kick += 1
         spin.reset(at: .now, angle: spin.angle(at: .now), velocity: reduceMotion ? 0 : 900)
@@ -384,21 +459,22 @@ struct OnboardingView: View {
         kick += 1
         sourcesTitle = false
         sourcesLede = false
-        sleevesOut = false
+        rowsIn = false
         withAnimation(.spring(duration: 0.6, bounce: 0.12)) { stage = .sources }
         Task {
             try? await Task.sleep(for: .milliseconds(reduceMotion ? 0 : 220))
             withAnimation(.linear(duration: reduceMotion ? 0 : 0.7)) { sourcesTitle = true }
             try? await Task.sleep(for: .milliseconds(reduceMotion ? 0 : 160))
             withAnimation(.linear(duration: reduceMotion ? 0 : 0.8)) { sourcesLede = true }
-            sleevesOut = true
+            rowsIn = true
         }
     }
 
-    /// The chosen record rolls all the way out of its sleeve, the others step back, then the real step opens.
+    /// The record takes the source's color and symbol and spins up, the other rows step back, then the real step opens.
     private func choose(_ source: OnboardingSource) {
         guard chosen == nil else { return }
         chosen = source
+        spin.reset(at: .now, angle: spin.angle(at: .now), velocity: reduceMotion ? 0 : 900)
         Task {
             try? await Task.sleep(for: .milliseconds(900))
             finish {
@@ -455,80 +531,6 @@ enum OnboardingSource: String, CaseIterable, Identifiable {
         case .server: Color(hex: "#9E8CFA")
         case .list: Color(hex: "#F5738F")
         }
-    }
-}
-
-/// A coloured record jacket with its record peeking out of the right edge, as on the website.
-private struct SleeveTile: View {
-    let source: OnboardingSource
-    var out: Bool
-    var chosen: Bool
-
-    var body: some View {
-        GeometryReader { g in
-            let s = g.size.width
-            ZStack {
-                SleeveRecord(color: source.color)
-                    .padding(s * 0.04)
-                    .rotationEffect(.degrees(chosen ? 320 : out ? 40 : 0))
-                    .offset(x: s * (chosen ? 0.6 : out ? 0.34 : 0))
-                jacket
-            }
-        }
-        .aspectRatio(1, contentMode: .fit)
-        .contentShape(Rectangle())
-    }
-
-    private var jacket: some View {
-        let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
-        return VStack(alignment: .leading, spacing: 0) {
-            Image(systemName: source.symbol)
-                .font(.system(size: 24, weight: .medium))
-            Spacer(minLength: 6)
-            Text(source.title)
-                .font(.system(size: 16, weight: .bold))
-                .tracking(-0.32)
-            Text(source.detail)
-                .font(.system(size: 12.5))
-                .opacity(0.88)
-                .lineLimit(2)
-                .padding(.top, 2)
-        }
-        .foregroundStyle(.white)
-        .padding(14)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background {
-            shape.fill(source.color)
-                .overlay {
-                    shape.fill(LinearGradient(stops: [.init(color: .white.opacity(0.28), location: 0), .init(color: .clear, location: 0.45)],
-                                              startPoint: .topLeading, endPoint: .bottomTrailing))
-                }
-                .overlay(alignment: .top) { Capsule().fill(.white.opacity(0.35)).frame(height: 1).padding(.horizontal, 6) }
-        }
-        .shadow(color: source.color.mix(with: .black, by: 0.35).opacity(0.55), radius: 14, y: 12)
-    }
-}
-
-/// The record inside a sleeve: black grooves and a label in the sleeve's colour.
-private struct SleeveRecord: View {
-    let color: Color
-
-    var body: some View {
-        GeometryReader { g in
-            let s = g.size.width
-            ZStack {
-                Circle().fill(Color(white: 0.07))
-                ForEach(0..<9) { i in
-                    Circle().strokeBorder(Color.white.opacity(i.isMultiple(of: 3) ? 0.07 : 0.04), lineWidth: 1)
-                        .padding(s * (0.03 + CGFloat(i) * 0.034))
-                }
-                Circle().fill(color).frame(width: s * 0.34, height: s * 0.34)
-                Circle().strokeBorder(Color(white: 0.07), lineWidth: s * 0.015).frame(width: s * 0.38, height: s * 0.38)
-                Circle().fill(Color(white: 0.07)).frame(width: s * 0.04, height: s * 0.04)
-            }
-            .shadow(color: .black.opacity(0.25), radius: 10, y: 8)
-        }
-        .aspectRatio(1, contentMode: .fit)
     }
 }
 

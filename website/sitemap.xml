@@ -2,7 +2,7 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
     <loc>https://mrsc.pages.dev/</loc>
-    <lastmod>2026-10-02</lastmod>
+    <lastmod>2026-10-05</lastmod>
     <image:image><image:loc>https://mrsc.pages.dev/img/player-mrsc.webp</image:loc></image:image>
     <image:image><image:loc>https://mrsc.pages.dev/img/home-mrsc.webp</image:loc></image:image>
     <image:image><image:loc>https://mrsc.pages.dev/img/lyrics.webp</image:loc></image:image>
@@ -11,6 +11,6 @@
   </url>
   <url>
     <loc>https://mrsc.pages.dev/open-source.html</loc>
-    <lastmod>2026-10-04</lastmod>
+    <lastmod>2026-10-05</lastmod>
   </url>
 </urlset>

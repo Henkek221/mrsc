@@ -46,6 +46,8 @@ To run it on your own iPhone, change `DEVELOPMENT_TEAM` and the bundle identifie
 
 MRSC can load extensions: small JavaScript files that connect it to a music server or API. MRSC doesn't include any, and this repo doesn't either. Please don't open pull requests that add extensions for services you don't have the rights to.
 
+Artist pages combine synced server songs and local files with enabled extensions automatically. Extensions can provide `getArtistTracks(name, ctx)` to return their full artist catalog, handling any server pagination themselves. Otherwise MRSC uses `searchTracks(name, 500, ctx)`, whose results may be limited by the provider. Returning `albumId` (or an album object with `id`) lets MRSC fill in albums through `getAlbum(id, ctx)`. Tracks can also include `albumArtist`, `trackNumber` and `year`. Browsing these results does not add them to the library.
+
 ## Contributing
 
 Bug reports and ideas are welcome as issues. Pull requests too, especially if you think there aren't enough settings yet. For quick questions and sharing themes, the Discord is the better place.

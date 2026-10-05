@@ -1151,6 +1151,11 @@ final class PlayerModel {
                 self?.saveQueueNow()
             }
         })
+        observers.append(Task { [weak self] in
+            for await _ in NotificationCenter.default.notifications(named: UIApplication.didBecomeActiveNotification) {
+                self?.refreshNowPlaying()
+            }
+        })
     }
 
     private func recoverEngine() {
@@ -1165,7 +1170,12 @@ final class PlayerModel {
     }
 
     /// Re-sends the Now Playing info, e.g. after the Lock Screen artwork style changed.
-    func refreshNowPlaying() { updateNowPlaying() }
+    func refreshNowPlaying() {
+        // iOS may have cached an unsuccessful asset request. A fresh object gives it another
+        // chance, including while playback is paused and there are no periodic info updates.
+        NowPlayingArtwork.shared.invalidateFullscreen()
+        updateNowPlaying()
+    }
 
     private func updateNowPlaying(force: Bool = false) {
         lastInfoUpdate = Date()

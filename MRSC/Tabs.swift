@@ -972,7 +972,7 @@ struct SettingsView: View {
                     }
                     Toggle("Live Lyrics", isOn: $settings.liveLyrics)
                 } header: { Text("Lock Screen") } footer: {
-                    Text("Fullscreen Artwork fills the Lock Screen with the cover. Framed keeps the whole cover visible on a blurred backdrop. Live Lyrics adds the current line as a Live Activity for songs with synced lyrics — it shares the Dynamic Island with the player.")
+                    Text("Fullscreen Artwork makes a full-screen cover available. Tap the cover on the Lock Screen to expand it. Framed keeps the whole cover visible on a blurred backdrop. Live Lyrics adds the current line as a Live Activity for songs with synced lyrics — it shares the Dynamic Island with the player.")
                 }
                 .onChange(of: settings.lockArtwork) { player.refreshNowPlaying() }
                 .onChange(of: settings.lockArtLayout) { player.refreshNowPlaying() }

@@ -2,44 +2,73 @@ import SwiftUI
 
 // MARK: - Artist page
 
-/// An artist in your library: who they are to you (plays, time listened, rank), their top songs and albums.
-/// The full song list sits one tap away under "See All".
+/// One artist page for local files, music servers and extension catalogs.
 struct ArtistDetailView: View {
     @Environment(LibraryStore.self) private var library
     @Environment(PlayerModel.self) private var player
     @Environment(AppSettings.self) private var settings
+    @Environment(SourceManager.self) private var sources
 
     let name: String
     @State private var titleShown = false
     @State private var about: AboutInfo?
+    @State private var catalogLoader = ArtistCatalogLoader()
 
-    var body: some View {
-        Group {
-            if let entry = library.entry(.artist, name) {
-                content(entry)
-            } else {
-                ContentUnavailableView("Not Available", systemImage: "music.mic")
-            }
-        }
-        .navigationBarTitleDisplayMode(.inline)
-        .task(id: name) { about = await AboutInfo.artist(name, settings: settings) }
+    private var request: ArtistCatalogLoader.Request {
+        ArtistCatalogLoader.Request(name: name, offline: settings.offlineMode, online: NetworkMonitor.shared.isOnline,
+                modules: ModuleStore.shared.enabled.filter { $0.canSearch || $0.canArtist })
     }
 
-    private func content(_ entry: LibraryEntry) -> some View {
+    var body: some View {
+        let catalog = ArtistCatalog(name: name, knownTracks: library.allTracks, moduleTracks: catalogLoader.moduleTracks)
+        content(catalog)
+            .navigationBarTitleDisplayMode(.inline)
+            .task(id: request) { await catalogLoader.load(request) }
+            .task(id: name) {
+                about = nil
+                let info = await AboutInfo.artist(name, settings: settings)
+                guard !Task.isCancelled else { return }
+                about = info
+            }
+            .refreshable {
+                guard !settings.offlineMode, NetworkMonitor.shared.isOnline else { return }
+                async let extensions: Void = catalogLoader.load(request)
+                async let servers: Void = sources.syncAll()
+                _ = await (extensions, servers)
+            }
+    }
+
+    private func content(_ catalog: ArtistCatalog) -> some View {
         let stats = ArtistStats(name: name, library: library)
-        let albums = library.albumEntries
-            .filter { $0.tracks.first?.artist == name }
-            .sorted { ($0.tracks.first?.year ?? 0, $1.title) > ($1.tracks.first?.year ?? 0, $0.title) }
-        let top = stats.topSongs.isEmpty ? Array(entry.tracks.prefix(5)) : stats.topSongs
+        let albums = catalog.albums
 
         return ScrollView {
-            VStack(spacing: 30) {
-                header(entry, albums: albums.count, stats: stats)
+            LazyVStack(spacing: 30) {
+                header(catalog, albums: albums.count, stats: stats)
+                if catalogLoader.loading || !sources.syncing.isEmpty {
+                    HStack { ProgressView(); Text("Loading songs and albums…").foregroundStyle(.secondary) }
+                }
+                if !catalogLoader.failedModules.isEmpty {
+                    VStack(spacing: 8) {
+                        Text("Some songs or albums couldn’t be loaded from \(catalogLoader.failedModules.joined(separator: ", ")).")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        Button("Retry") { Task { await catalogLoader.load(request) } }
+                            .disabled(catalogLoader.loading)
+                    }
+                    .padding(.horizontal, 20)
+                }
                 if stats.plays > 0 { statsCard(stats) }
-                songsSection(entry, top: top, ranked: !stats.topSongs.isEmpty)
-                if !albums.isEmpty { albumsSection(albums) }
+                if !albums.isEmpty { albumsSection(albums, catalog: catalog) }
+                if !stats.topSongs.isEmpty {
+                    songsSection(catalog, songs: stats.topSongs, ranked: true)
+                }
+                if !catalog.tracks.isEmpty {
+                    songsSection(catalog, songs: catalog.tracks, ranked: false)
+                } else if !catalogLoader.loading && sources.syncing.isEmpty {
+                    ContentUnavailableView("No songs found", systemImage: "music.note",
+                                           description: Text("No songs by \(name) are available from your sources."))
+                }
                 if let about { AboutCard(info: about).padding(.horizontal, 20) }
-                if ModuleStore.shared.canDiscover(offlineMode: settings.offlineMode) { discoverRow }
             }
             .padding(.bottom, 24)
         }
@@ -50,16 +79,30 @@ struct ArtistDetailView: View {
         .navigationTitle(titleShown ? name : "")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Menu { EntryMenuItems(entry: entry) } label: { Image(systemName: "ellipsis") }
+                Menu {
+                    ArtistCatalogMenu(catalog: catalog, tracks: catalog.tracks, title: name)
+                    if let entry = library.entry(.artist, name) {
+                        Divider()
+                        Button { library.togglePin(entry) } label: {
+                            Label(library.isPinned(entry) ? "Unpin" : "Pin", systemImage: "pin")
+                        }
+                        Button { library.toggleFavorite(entry) } label: {
+                            Label(library.isFavorite(entry) ? "Unfavorite" : "Favorite", systemImage: "star")
+                        }
+                        ShareLink(item: ShareItem.text(for: entry)) { Label("Share…", systemImage: "square.and.arrow.up") }
+                    }
+                } label: { Image(systemName: "ellipsis") }
+                .disabled(catalog.tracks.isEmpty)
             }
         }
     }
 
     // MARK: Header
 
-    private func header(_ entry: LibraryEntry, albums: Int, stats: ArtistStats) -> some View {
-        VStack(spacing: 14) {
-            ArtworkView(entry: entry)
+    private func header(_ catalog: ArtistCatalog, albums: Int, stats: ArtistStats) -> some View {
+        let entry = catalog.entry
+        return VStack(spacing: 14) {
+            ArtistCatalogArtwork(entry: entry)
                 .frame(width: 200, height: 200)
                 .shadow(color: .black.opacity(0.25), radius: 22, y: 10)
             VStack(spacing: 4) {
@@ -72,15 +115,16 @@ struct ArtistDetailView: View {
                     .foregroundStyle(.secondary)
             }
             HStack(spacing: 12) {
-                Button { player.play(entry.tracks, title: name) } label: {
+                Button { player.play(catalog.resolve(entry.tracks, library: library), title: name, context: .artist) } label: {
                     Label("Play", systemImage: "play.fill").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.glassProminent)
-                Button { player.play(entry.tracks, title: name, shuffled: true) } label: {
+                Button { player.play(catalog.resolve(entry.tracks, library: library), title: name, shuffled: true, context: .artist) } label: {
                     Label("Shuffle", systemImage: "shuffle").frame(maxWidth: .infinity).foregroundStyle(Theme.accent)
                 }
                 .buttonStyle(.glass)
             }
+            .disabled(entry.tracks.isEmpty)
             .font(.system(size: 17, weight: .semibold))
             .controlSize(.large)
             .tint(Theme.accent)
@@ -152,30 +196,15 @@ struct ArtistDetailView: View {
 
     // MARK: Songs
 
-    private func songsSection(_ entry: LibraryEntry, top: [Track], ranked: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                sectionTitle(ranked ? "Top Songs" : "Songs")
-                Spacer()
-                if entry.tracks.count > top.count {
-                    NavigationLink {
-                        ArtistSongsView(name: name).themedBackground().clearsMiniPlayer()
-                    } label: {
-                        Text("See All").font(.system(size: 16)).foregroundStyle(Theme.accent)
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-
-            VStack(spacing: 0) {
-                ForEach(Array(top.enumerated()), id: \.element.id) { i, track in
-                    if i > 0 { Divider().padding(.leading, 84) }
-                    TrackRow(track: track, subtitle: subtitle(track, ranked: ranked)) {
-                        player.play(top, startAt: i, title: name)
-                    }
+    private func songsSection(_ catalog: ArtistCatalog, songs: [Track], ranked: Bool) -> some View {
+        LazyVStack(alignment: .leading, spacing: 6) {
+            sectionTitle(ranked ? "Top Songs" : "Songs")
+                .padding(.horizontal, 20)
+            ForEach(songs) { track in
+                ArtistCatalogSongRow(catalog: catalog, track: track, queue: songs, title: name,
+                                     subtitle: subtitle(track, ranked: ranked))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
-                }
             }
         }
     }
@@ -188,15 +217,21 @@ struct ArtistDetailView: View {
 
     // MARK: Albums
 
-    private func albumsSection(_ albums: [LibraryEntry]) -> some View {
+    private func albumsSection(_ albums: [LibraryEntry], catalog: ArtistCatalog) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionTitle(albums.count == 1 ? "Album" : "Albums").padding(.horizontal, 20)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 14) {
                     ForEach(albums) { album in
-                        NavigationLink(value: album.route) {
+                        NavigationLink {
+                            if let saved = library.entry(.album, album.key), Set(saved.tracks.map(\.id)) == Set(album.tracks.map(\.id)) {
+                                CollectionDetailView(kind: .album, key: saved.key).themedBackground().clearsMiniPlayer()
+                            } else {
+                                ArtistCatalogAlbumView(catalog: catalog, album: album).themedBackground().clearsMiniPlayer()
+                            }
+                        } label: {
                             VStack(alignment: .leading, spacing: 7) {
-                                ArtworkView(entry: album, radius: 12).thumbnail(480)
+                                ArtistCatalogArtwork(entry: album)
                                     .frame(width: 150, height: 150)
                                     .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
                                 VStack(alignment: .leading, spacing: 1) {
@@ -208,7 +243,13 @@ struct ArtistDetailView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .contextMenu { EntryMenuItems(entry: album) }
+                        .contextMenu {
+                            if let saved = library.entry(.album, album.key), Set(saved.tracks.map(\.id)) == Set(album.tracks.map(\.id)) {
+                                EntryMenuItems(entry: saved)
+                            } else {
+                                ArtistCatalogMenu(catalog: catalog, tracks: album.tracks, title: album.title, kind: .album)
+                            }
+                        }
                     }
                 }
                 .scrollTargetLayout()
@@ -222,33 +263,6 @@ struct ArtistDetailView: View {
         let count = songCount(album.tracks.count)
         guard let year = album.tracks.compactMap(\.year).max() else { return count }
         return "\(year) · \(count)"
-    }
-
-    // MARK: Discover
-
-    private var discoverRow: some View {
-        NavigationLink {
-            ModuleArtistView(name: name).themedBackground().clearsMiniPlayer()
-        } label: {
-            HStack(spacing: 14) {
-                Image(systemName: "music.mic")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(Theme.accent)
-                    .frame(width: 44, height: 44)
-                    .background(Theme.accent.opacity(0.12), in: Circle())
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("More from \(name)").font(.system(size: 16, weight: .medium)).lineLimit(1)
-                    Text("Songs you don't have yet").font(.system(size: 13)).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right").font(.system(size: 14, weight: .semibold)).foregroundStyle(.tertiary)
-            }
-            .padding(14)
-            .background(Theme.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 20)
     }
 
     private func sectionTitle(_ text: String) -> some View {
@@ -274,7 +288,7 @@ private struct ArtistStats {
         for t in library.allTracks {
             let n = t.playCount ?? 0
             if n > 0 { totals[t.artist, default: 0] += n }
-            if t.artist == name { mine.append(t) }
+            if ArtistCatalog.matches(t.artist, name: name) || ArtistCatalog.matches(t.albumArtist ?? "", name: name) { mine.append(t) }
         }
         for t in mine {
             let n = t.playCount ?? 0
@@ -314,7 +328,7 @@ struct ArtistSongsView: View {
     let name: String
 
     var body: some View {
-        let tracks = library.entry(.artist, name)?.tracks ?? []
+        let tracks = ArtistCatalog(name: name, knownTracks: library.allTracks, moduleTracks: []).tracks
         let origins = Set(tracks.map(\.origin))
         List {
             PlayShuffleBar(tracks: tracks, title: name)

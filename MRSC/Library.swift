@@ -22,6 +22,13 @@ final class LibraryStore {
     var playlists: [Playlist] = [] { didSet { scheduleSave() } }
     var pinned: [PinnedItem] = [] { didSet { scheduleSave() } }
     var favorites: Set<String> = [] { didSet { scheduleSave() } }
+    /// Downloads-tab order, including songs still waiting for their offline copy.
+    private(set) var downloadOrder: [UUID] = [] {
+        didSet {
+            _memo = _memo.filter { !$0.key.hasPrefix("downloads|") }
+            scheduleSave()
+        }
+    }
     var importStatus: ImportStatus?
 
     // Derived data is rebuilt lazily: many changes in a row (plays, lyrics, analysis, imports) cost one rebuild,
@@ -57,6 +64,7 @@ final class LibraryStore {
         var pinned: [PinnedItem]
         var favorites: Set<String>
         var heard: [Track]?
+        var downloadOrder: [UUID]?
     }
 
     init() {
@@ -68,6 +76,7 @@ final class LibraryStore {
             pinned = snap.pinned
             favorites = snap.favorites
             heard = snap.heard ?? []
+            downloadOrder = snap.downloadOrder ?? []
         }
         // Property observers don't run in init, so save explicitly when these changed anything.
         let moved = separateHeardOnce(), pruned = pruneHeard()
@@ -183,6 +192,38 @@ final class LibraryStore {
         let value = build()
         _memo[key] = value
         return value
+    }
+
+    // MARK: Downloads order
+
+    /// Unordered songs keep the existing artist/album order supplied by the caller.
+    func orderedDownloads(_ list: [Track]) -> [Track] {
+        guard !downloadOrder.isEmpty else { return list }
+        let byID = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let ordered = Set(downloadOrder)
+        return downloadOrder.compactMap { byID[$0] } + list.filter { !ordered.contains($0.id) }
+    }
+
+    /// Record a batch before it starts, so completion timing cannot shuffle a playlist.
+    func rememberDownloads(_ ids: [UUID]) {
+        guard !ids.isEmpty else { return }
+        var order = downloadOrder
+        var seen = Set(order)
+        let existing = SmartShuffle.libraryOrder(tracks.filter(\.isOffline)).map(\.id)
+        for id in existing + ids where seen.insert(id).inserted { order.append(id) }
+        if order != downloadOrder { downloadOrder = order }
+    }
+
+    /// Replace only the visible songs' slots; other Downloads filters retain their positions.
+    func setDownloadOrder(_ ids: [UUID]) {
+        var seen = Set<UUID>()
+        let ids = ids.filter { seen.insert($0).inserted }
+        guard !ids.isEmpty else { return }
+        rememberDownloads(ids)
+        let visible = Set(ids)
+        var replacements = ids.makeIterator()
+        let order = downloadOrder.map { visible.contains($0) ? (replacements.next() ?? $0) : $0 }
+        if order != downloadOrder { downloadOrder = order }
     }
 
     /// The song for a streaming id (`sourceID|remoteID`), in the library or only played.
@@ -426,6 +467,7 @@ final class LibraryStore {
         if lists != playlists { playlists = lists }
         tracks.removeAll { ids.contains($0.id) }
         if heard.contains(where: { ids.contains($0.id) }) { heard.removeAll { ids.contains($0.id) } }
+        downloadOrder.removeAll { ids.contains($0) }
         pinned.removeAll { entry($0.kind, $0.key) == nil }
     }
 
@@ -475,7 +517,7 @@ final class LibraryStore {
             guard !Task.isCancelled, let self else { return }
             // Taken when writing, not on every change: a snapshot held while changes keep coming would make
             // each of them copy the whole song list.
-            let snapshot = Snapshot(tracks: tracks, playlists: playlists, pinned: pinned, favorites: favorites, heard: heard)
+            let snapshot = Snapshot(tracks: tracks, playlists: playlists, pinned: pinned, favorites: favorites, heard: heard, downloadOrder: downloadOrder)
             await Task.detached(priority: .utility) { Self.write(snapshot) }.value
         }
     }

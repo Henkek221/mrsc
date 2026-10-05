@@ -1,6 +1,7 @@
 import Foundation
 import JavaScriptCore
 import Observation
+import CryptoKit
 
 // MARK: - Models
 
@@ -13,7 +14,41 @@ nonisolated struct ModuleTrack: Sendable, Hashable, Identifiable {
     var album: String
     var duration: Double
     var cover: String?
+    var albumArtist: String? = nil
+    var albumID: String? = nil
+    var trackNumber: Int = 0
+    var year: Int? = nil
     var id: String { "\(moduleID):\(trackID)" }
+
+    /// Refresh source metadata without replacing the saved song's identity, download or user edits.
+    func enriching(_ saved: Track) -> Track {
+        var track = saved
+        if track.artworkURL?.isEmpty != false { track.artworkURL = cover }
+        if track.remoteAlbumID?.isEmpty != false { track.remoteAlbumID = albumID }
+        if !track.metadataLocked {
+            if track.album.isEmpty || track.album == "Unknown Album" { track.album = album }
+            if track.albumArtist?.isEmpty != false { track.albumArtist = albumArtist }
+            if track.trackNumber == 0 { track.trackNumber = trackNumber }
+            if track.year == nil { track.year = year }
+        }
+        return track
+    }
+
+    /// A stable, unsaved song for catalog pages. Merely browsing must not add songs to the library.
+    var previewTrack: Track {
+        let bytes = Array(SHA256.hash(data: Data(id.utf8)).prefix(16))
+        let uuid = UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                               bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
+        var track = Track(id: uuid, title: title, artist: artist, album: album, duration: duration, path: "")
+        track.sourceID = "module:\(moduleID)"
+        track.remoteID = trackID
+        track.albumArtist = albumArtist
+        track.remoteAlbumID = albumID
+        track.trackNumber = trackNumber
+        track.year = year
+        track.artworkURL = cover
+        return track
+    }
 }
 
 nonisolated struct ModuleSetting: Codable, Hashable, Sendable, Identifiable {
@@ -42,6 +77,7 @@ nonisolated struct InstalledModule: Codable, Hashable, Sendable, Identifiable {
     var installedAt = Date()
 
     var canSearch: Bool { functions.contains("searchTracks") }
+    var canArtist: Bool { functions.contains("getArtistTracks") }
     var canStream: Bool { functions.contains("getTrackStreamUrl") }
     var canAlbum: Bool { functions.contains("getAlbum") }
     var sourceID: String { "module:\(id)" }
@@ -170,7 +206,7 @@ final class ModuleStore {
         }
         var mod = info
         guard !mod.id.isEmpty else { throw ModuleError.invalid("it has no id") }
-        guard mod.canSearch || mod.canStream || mod.canAlbum else { throw ModuleError.invalid("it has no searchTracks / getTrackStreamUrl") }
+        guard mod.canSearch || mod.canArtist || mod.canStream || mod.canAlbum else { throw ModuleError.invalid("it has no searchTracks / getArtistTracks / getTrackStreamUrl") }
         ctx.evaluateScript("delete __modules['\(tempID)'];")
         if let old = modules.first(where: { $0.id == mod.id }) {
             mod.values = old.values.filter { k, _ in mod.settings.contains { $0.key == k } }
@@ -331,6 +367,55 @@ final class ModuleStore {
         return Self.parseTracks(json, moduleID: m.id)
     }
 
+    /// Prefer an extension's artist catalog; search-only extensions remain compatible.
+    /// Publish search results immediately, then fill in their albums with at most four requests at a time.
+    func artistTracks(_ m: InstalledModule, name: String,
+                      onAlbumFailure: @MainActor (String) -> Void = { _ in },
+                      onUpdate: @MainActor ([ModuleTrack]) -> Void = { _ in }) async throws -> [ModuleTrack] {
+        let found: [ModuleTrack]
+        if m.canArtist {
+            found = Self.parseTracks(try await call(m, "getArtistTracks", args: [name]), moduleID: m.id)
+        } else {
+            found = try await searchTracks(m, name, limit: 500)
+        }
+        try Task.checkCancellation()
+        var seen = Set<String>()
+        func relevant(_ tracks: [ModuleTrack]) -> [ModuleTrack] {
+            tracks.filter { (ArtistCatalog.matches($0.artist, name: name) || ArtistCatalog.matches($0.albumArtist ?? "", name: name))
+                && seen.insert($0.id).inserted }
+        }
+        var list = relevant(found)
+        onUpdate(list)
+        if m.canAlbum {
+            let ids = Set(list.compactMap(\.albumID)).sorted()
+            await withTaskGroup(of: (String, [ModuleTrack]?).self) { group in
+                var next = 0
+                func add() {
+                    guard next < ids.count, !Task.isCancelled else { return }
+                    let id = ids[next]
+                    next += 1
+                    group.addTask {
+                        do { return (id, try await self.album(m, id: id)) }
+                        catch {
+                            if !Task.isCancelled { await self.log("error", "[\(m.name)] artist album failed: \(error.localizedDescription)") }
+                            return (id, nil)
+                        }
+                    }
+                }
+                for _ in 0..<min(4, ids.count) { add() }
+                for await (id, tracks) in group {
+                    guard !Task.isCancelled else { group.cancelAll(); return }
+                    if let tracks { list += relevant(tracks) }
+                    else { onAlbumFailure(id) }
+                    onUpdate(list)
+                    add()
+                }
+            }
+        }
+        try Task.checkCancellation()
+        return list
+    }
+
     /// Resolves a playable URL. Stream URLs usually expire, so this is asked again for every play/download.
     func streamURL(moduleID: String, trackID: String, quality: String) async throws -> URL {
         guard let m = module(moduleID), m.enabled else { throw ModuleError.notInstalled }
@@ -366,11 +451,45 @@ final class ModuleStore {
             var duration = (t["duration"] as? NSNumber)?.doubleValue ?? Double(str(t["duration"]) ?? "") ?? 0
             if duration > 36_000 { duration /= 1000 }   // milliseconds
             let album = t["album"]
-            var cover = str(t["albumCover"] ?? t["cover"] ?? t["artwork"] ?? t["image"])
-            if cover == nil, let a = album as? [String: Any] { cover = str(a["cover"] ?? a["image"]) }
+            let albumObject = album as? [String: Any]
+            let coverKeys = ["albumCover", "albumCoverUrl", "albumCoverURL", "cover", "coverUrl", "coverURL",
+                             "artwork", "artworkUrl", "artworkURL", "image", "imageUrl", "imageURL",
+                             "cover_xl", "cover_big", "cover_medium", "artworkUrl100"]
+            let cover = coverKeys.compactMap { imageURL(t[$0]) }.first
+                ?? albumObject.flatMap { album in coverKeys.compactMap { imageURL(album[$0]) }.first }
             return ModuleTrack(moduleID: moduleID, trackID: id, title: title, artist: str(t["artist"] ?? t["artists"]) ?? "Unknown Artist",
-                               album: str(album) ?? "Unknown Album", duration: duration, cover: cover)
+                               album: str(album) ?? "Unknown Album", duration: duration, cover: cover,
+                               albumArtist: str(t["albumArtist"] ?? albumObject?["artist"]),
+                               albumID: str(t["albumId"] ?? t["albumID"] ?? t["album_id"] ?? albumObject?["id"]),
+                               trackNumber: Int(str(t["trackNumber"] ?? t["track_position"]) ?? "") ?? 0,
+                               year: Int(str(t["year"]) ?? ""))
         }
+    }
+
+    /// Artwork is often returned as an object or a list of image sizes, rather than a plain URL.
+    nonisolated private static func imageURL(_ value: Any?) -> String? {
+        if let string = value as? String {
+            var link = string.trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "&amp;", with: "&")
+            if link.hasPrefix("//") { link = "https:" + link }
+            guard let url = URL(string: link), let scheme = url.scheme?.lowercased(),
+                  ["https", "http"].contains(scheme), url.host != nil else { return nil }
+            return url.absoluteString
+        }
+        if let object = value as? [String: Any] {
+            for key in ["xl", "large", "cover_xl", "cover_big", "url", "src", "uri", "source", "medium", "small", "cover", "image", "artwork"] {
+                if let link = imageURL(object[key]) { return link }
+            }
+        }
+        if let images = value as? [Any] {
+            let sorted = images.sorted {
+                let left = (($0 as? [String: Any])?["width"] as? NSNumber)?.intValue ?? 0
+                let right = (($1 as? [String: Any])?["width"] as? NSNumber)?.intValue ?? 0
+                return left > right
+            }
+            for image in sorted { if let link = imageURL(image) { return link } }
+        }
+        return nil
     }
 
     private func call(_ m: InstalledModule, _ fn: String, args: [Any]) async throws -> String {

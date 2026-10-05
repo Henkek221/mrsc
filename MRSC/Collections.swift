@@ -11,9 +11,12 @@ struct DownloadsView: View {
     @Environment(SourceManager.self) private var sources
     @State private var scope: Scope = .all
     @State private var confirmRemove = false
+    @State private var editMode: EditMode = .inactive
 
     private var tracks: [Track] {
         let scope = scope
+        // Order changes invalidate these memoized lists; read it here for observation.
+        _ = library.downloadOrder
         return library.memo("downloads|\(scope.rawValue)") {
             let list: [Track]
             switch scope {
@@ -21,24 +24,52 @@ struct DownloadsView: View {
             case .downloaded: list = library.tracks.filter(\.isDownloaded)
             case .streaming: list = library.tracks.filter { $0.isRemote && !$0.isDownloaded }
             }
-            return SmartShuffle.libraryOrder(list)
+            return library.orderedDownloads(SmartShuffle.libraryOrder(list))
         }
     }
 
     var body: some View {
         let list = tracks
+        let running = downloads.runningIDs.compactMap { library.trackByID[$0] }.filter { downloads.state($0.id) != nil }
+        let queued = downloads.queue.compactMap { library.trackByID[$0] }
+        let failed = library.orderedDownloads(SmartShuffle.libraryOrder(downloads.states.compactMap { id, state in
+            state.isFailed ? library.trackByID[id] : nil
+        }))
+        let canReorder = list.count > 1 || queued.count > 1
         List {
             if sources.hasSources || !ModuleStore.shared.modules.isEmpty {
                 Picker("Show", selection: $scope) { ForEach(Scope.allCases) { Text($0.rawValue).tag($0) } }
                     .pickerStyle(.segmented)
                     .listRowSeparator(.hidden)
             }
-            if downloads.activeCount > 0 {
+            if !running.isEmpty {
                 Section("Downloading") {
-                    ForEach(Array(downloads.states.keys), id: \.self) { id in
-                        if let t = library.trackByID[id] { DownloadRow(track: t, state: downloads.state(id)) }
+                    ForEach(running) { t in
+                        DownloadRow(track: t, state: downloads.state(t.id))
+                    }
+                }
+            }
+            if !queued.isEmpty {
+                Section {
+                    ForEach(queued) { t in
+                        DownloadRow(track: t, state: downloads.state(t.id))
+                    }
+                    .onMove { from, to in
+                        var ids = queued.map(\.id)
+                        ids.move(fromOffsets: from, toOffset: to)
+                        downloads.setQueueOrder(ids)
                     }
                     Button("Cancel Remaining", role: .destructive) { downloads.cancelAll() }
+                } header: { Text("Waiting") } footer: {
+                    Text("Downloads start from top to bottom. Tap Edit Order to move waiting songs.")
+                }
+            }
+            if !failed.isEmpty {
+                Section("Failed Downloads") {
+                    ForEach(failed) { t in
+                        DownloadRow(track: t, state: downloads.state(t.id))
+                    }
+                    Button("Retry Failed") { downloads.download(failed) }
                 }
             }
             if !list.isEmpty {
@@ -49,22 +80,35 @@ struct DownloadsView: View {
                     ForEach(list) { t in
                         TrackRow(track: t) { player.play(list, startAt: list.firstIndex(of: t) ?? 0, title: scope.rawValue) }
                     }
+                    .onMove { from, to in
+                        var ids = list.map(\.id)
+                        ids.move(fromOffsets: from, toOffset: to)
+                        library.setDownloadOrder(ids)
+                    }
                 } footer: {
                     Text("\(songCount(list.count)) · \(ByteCountFormatter.string(fromByteCount: size(list), countStyle: .file))")
                 }
             }
         }
         .listStyle(.plain)
+        .environment(\.editMode, $editMode)
         .navigationTitle("Downloads")
         .navigationBarTitleDisplayMode(.inline)
         .overlay {
-            if list.isEmpty && downloads.activeCount == 0 {
+            if list.isEmpty && downloads.states.isEmpty {
                 ContentUnavailableView(scope == .streaming ? "Everything Is Downloaded" : "No Downloads",
                                        systemImage: "arrow.down.circle",
                                        description: Text("Long-press an album, playlist or artist from your server and choose Download, or tap the arrow next to a song from an extension."))
             }
         }
         .toolbar {
+            if canReorder || editMode.isEditing {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(editMode.isEditing ? "Done" : "Edit Order") {
+                        withAnimation { editMode = editMode.isEditing ? .inactive : .active }
+                    }
+                }
+            }
             if scope == .streaming, !list.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { downloads.download(list) } label: { Image(systemName: "arrow.down.circle") }.accessibilityLabel("Download All")
