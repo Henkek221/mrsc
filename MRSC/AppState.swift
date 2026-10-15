@@ -42,6 +42,9 @@ final class Router {
     var importKind: ImportKind?
     var showImporter = false
     var searchActive = false
+    /// A list is in multi-select mode with its own bottom bar: the mini player and the pills around the
+    /// tab bar step aside so they don't cover it.
+    var selecting = false
     var showAdd = false
     var collapsed = false
     var searchText = ""

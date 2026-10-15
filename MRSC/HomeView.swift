@@ -82,6 +82,8 @@ struct HomeView: View {
                     }
                 }
             }
+            // Breathing room under the large title, like Apple Music.
+            .padding(.top, 16)
             .padding(.bottom, 24)
         }
         .trackScroll()
@@ -115,7 +117,7 @@ struct HomeView: View {
                     if let artist = library.artistEntries.max(by: { $0.tracks.count < $1.tracks.count }) {
                         pick(eyebrow: "Station", title: "\(artist.title) & Similar",
                              subtitle: "Endless music, starting with \(artist.title)",
-                             art: ArtworkView(tracks: artist.tracks, seed: artist.key, style: .rounded(20), mosaic: artist.tracks.count > 1)) {
+                             art: ArtworkView(tracks: artist.tracks, seed: artist.key, style: .rounded(20), mosaic: true)) {
                             if let seed = artist.tracks.first { player.startRadio(from: seed) }
                         }
                     }
@@ -137,9 +139,9 @@ struct HomeView: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(eyebrow.uppercased()).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
-                    Text(title).font(.system(size: 20, weight: .regular)).lineLimit(1)
-                    Text(subtitle).font(.system(size: 15)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(eyebrow.uppercased()).font(.app(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                    Text(title).font(.app(size: 20, weight: .regular)).lineLimit(1)
+                    Text(subtitle).font(.app(size: 15)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Color.clear
                     .aspectRatio(1, contentMode: .fit)
@@ -147,7 +149,7 @@ struct HomeView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .overlay(alignment: .bottomTrailing) {
                         Image(systemName: "play.fill")
-                            .font(.system(size: 18, weight: .bold))
+                            .font(.app(size: 18, weight: .bold))
                             .foregroundStyle(.white)
                             .frame(width: 48, height: 48)
                             .glassEffect(.regular.interactive(), in: .circle)
@@ -158,7 +160,8 @@ struct HomeView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .containerRelativeFrame(.horizontal) { w, _ in w - 64 }
+        // One card per screen on iPhone; on wide screens (iPad) two and a half, so the art doesn't fill the whole window.
+        .containerRelativeFrame(.horizontal) { w, _ in w > 700 ? (w - 68) / 2.5 : w - 64 }
     }
 
     // MARK: Shelves
@@ -197,7 +200,7 @@ struct HomeView: View {
                     Button {
                         player.play(recentlyPlayed, startAt: recentlyPlayed.firstIndex(of: t) ?? 0, title: "Recently Played")
                     } label: {
-                        caption(ArtworkView(track: t, radius: 12).thumbnail(460), t.title, t.artist)
+                        caption(ArtworkView(track: t, radius: 12).thumbnail(460), t.title, t.artistCredit)
                     }
                     .buttonStyle(.plain)
                 }
@@ -227,7 +230,7 @@ struct HomeView: View {
                     NavigationLink(value: artist.route) {
                         VStack(spacing: 8) {
                             ArtworkView(entry: artist).thumbnail(400).frame(width: 128, height: 128)
-                            Text(artist.title).font(.system(size: 14, weight: .medium)).lineLimit(1).frame(width: 128)
+                            Text(artist.title).font(.app(size: 14, weight: .medium)).lineLimit(1).frame(width: 128)
                         }
                     }
                     .buttonStyle(.plain)
@@ -239,14 +242,14 @@ struct HomeView: View {
     private var recentlyAddedShelf: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionTitle("Recently Added", route: .albums)
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 18) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 18) {
                 ForEach(recentlyAdded.prefix(6)) { album in
                     NavigationLink(value: album.route) {
                         VStack(alignment: .leading, spacing: 6) {
                             ArtworkView(entry: album, radius: 12)
                                 .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
-                            Text(album.title).font(.system(size: 14, weight: .medium)).lineLimit(1)
-                            Text(album.subtitle).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                            Text(album.title).font(.app(size: 14, weight: .medium)).lineLimit(1)
+                            Text(album.subtitle).font(.app(size: 12)).foregroundStyle(.secondary).lineLimit(1)
                         }
                     }
                     .buttonStyle(.plain)
@@ -265,8 +268,8 @@ struct HomeView: View {
                 ForEach(layout.shortcuts) { sc in
                     Button { run(sc) } label: {
                         HStack(spacing: 10) {
-                            Image(systemName: sc.icon).font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.accent).frame(width: 22)
-                            Text(sc.title).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                            Image(systemName: sc.icon).font(.app(size: 16, weight: .semibold)).foregroundStyle(Theme.accent).frame(width: 22)
+                            Text(sc.title).font(.app(size: 15, weight: .semibold)).lineLimit(1)
                             Spacer(minLength: 0)
                         }
                         .padding(.horizontal, 14)
@@ -304,7 +307,7 @@ struct HomeView: View {
                 shelfScroll {
                     ForEach(list) { t in
                         Button { player.play(list, startAt: list.firstIndex(of: t) ?? 0, title: title) } label: {
-                            caption(ArtworkView(track: t, radius: 12).thumbnail(460), t.title, t.artist)
+                            caption(ArtworkView(track: t, radius: 12).thumbnail(460), t.title, t.artistCredit)
                         }
                         .buttonStyle(.plain)
                     }
@@ -334,14 +337,14 @@ struct HomeView: View {
         if let route {
             NavigationLink(value: route) {
                 HStack(spacing: 5) {
-                    Text(title).font(.system(size: 22, weight: .bold))
-                    Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundStyle(.tertiary)
+                    Text(title).font(.app(size: 22, weight: .bold))
+                    Image(systemName: "chevron.right").font(.app(size: 14, weight: .bold)).foregroundStyle(.tertiary)
                 }
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 20)
         } else {
-            Text(title).font(.system(size: 22, weight: .bold)).padding(.horizontal, 20)
+            Text(title).font(.app(size: 22, weight: .bold)).padding(.horizontal, 20)
         }
     }
 
@@ -359,8 +362,8 @@ struct HomeView: View {
             art.frame(width: 150, height: 150)
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.system(size: 14, weight: .medium)).lineLimit(1)
-                Text(subtitle).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                Text(title).font(.app(size: 14, weight: .medium)).lineLimit(1)
+                Text(subtitle).font(.app(size: 12)).foregroundStyle(.secondary).lineLimit(1)
             }
             .frame(width: 150, alignment: .leading)
         }
@@ -374,7 +377,6 @@ struct MixArt: View {
     let seed: String
 
     var body: some View {
-        let distinct = Dictionary(grouping: tracks, by: { $0.album + $0.artist }).values.compactMap(\.first)
-        ArtworkView(tracks: Array(distinct.prefix(4)) + tracks, seed: seed, style: .rounded(14), mosaic: true)
+        ArtworkView(tracks: tracks, seed: seed, style: .rounded(14), mosaic: true)
     }
 }

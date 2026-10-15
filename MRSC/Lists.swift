@@ -62,7 +62,7 @@ struct SongsView: View {
                         .tag(track.id)
                     }
                 } header: {
-                    if !letter.isEmpty { Text(letter).font(.system(size: 20, weight: .bold)).foregroundStyle(.primary) }
+                    if !letter.isEmpty { Text(letter).font(.app(size: 20, weight: .bold)).foregroundStyle(.primary) }
                 }
                 .sectionIndexLabel(letter)
             }
@@ -73,7 +73,7 @@ struct SongsView: View {
         .environment(\.editMode, $editMode)
         .navigationTitle("Songs")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarVisibility(editMode.isEditing ? .hidden : .automatic, for: .tabBar)
+        .selectionChrome(editMode.isEditing)
         .overlay {
             if library.tracks.isEmpty {
                 ContentUnavailableView("No Songs", systemImage: "music.note", description: Text("Tap + in Library to add music."))
@@ -112,7 +112,7 @@ struct SongsView: View {
                 if editMode.isEditing {
                     Button("Add to Playlist") { showPicker = true }.disabled(selection.isEmpty)
                     Spacer()
-                    Text(selection.isEmpty ? "Select Songs" : "\(selection.count) Selected").font(.footnote)
+                    Text(selection.isEmpty ? "Select Songs" : "\(selection.count) Selected").font(.app(.footnote))
                     Spacer()
                     Button("Delete", role: .destructive) { confirmDelete = true }.disabled(selection.isEmpty)
                 }
@@ -159,8 +159,8 @@ struct PlaylistsView: View {
                     HStack(spacing: 14) {
                         ArtworkView(entry: entry, radius: 10).thumbnail(200).frame(width: 64, height: 64)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(entry.title).font(.system(size: 17, weight: .medium)).lineLimit(1)
-                            Text(entry.subtitle).font(.system(size: 14)).foregroundStyle(.secondary)
+                            Text(entry.title).font(.app(size: 17, weight: .medium)).lineLimit(1)
+                            Text(entry.subtitle).font(.app(size: 14)).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -241,10 +241,10 @@ struct ArtistsView: View {
                         ArtworkView(entry: entry).thumbnail(200).frame(width: 64, height: 64)
                         VStack(alignment: .leading, spacing: 3) {
                             HStack(spacing: 5) {
-                                Text(entry.title).font(.system(size: 17, weight: .medium)).lineLimit(1)
-                                if library.isFavorite(entry) { Image(systemName: "star.fill").font(.system(size: 11)).foregroundStyle(.yellow) }
+                                Text(entry.title).font(.app(size: 17, weight: .medium)).lineLimit(1)
+                                if library.isFavorite(entry) { Image(systemName: "star.fill").font(.app(size: 11)).foregroundStyle(.yellow) }
                             }
-                            Text(entry.subtitle).font(.system(size: 14)).foregroundStyle(.secondary)
+                            Text(entry.subtitle).font(.app(size: 14)).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -304,15 +304,15 @@ struct AlbumsView: View {
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 20) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16)], spacing: 20) {
                 ForEach(entries) { entry in
                     NavigationLink(value: entry.route) {
                         VStack(alignment: .leading, spacing: 8) {
                             ArtworkView(entry: entry, radius: 14)
                                 .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(entry.title).font(.system(size: 15, weight: .semibold)).lineLimit(1)
-                                Text(entry.subtitle).font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
+                                Text(entry.title).font(.app(size: 15, weight: .semibold)).lineLimit(1)
+                                Text(entry.subtitle).font(.app(size: 13)).foregroundStyle(.secondary).lineLimit(1)
                             }
                         }
                         .foregroundStyle(.primary)
@@ -395,8 +395,8 @@ struct CollectionDetailView: View {
                     .frame(width: 210, height: 210)
                     .shadow(color: .black.opacity(0.2), radius: 16, y: 8)
                 VStack(spacing: 3) {
-                    Text(entry.title).font(.system(size: 22, weight: .bold)).multilineTextAlignment(.center)
-                    Text(entry.subtitle).font(.system(size: 14)).foregroundStyle(.secondary)
+                    Text(entry.title).font(.app(size: 22, weight: .bold)).multilineTextAlignment(.center)
+                    Text(entry.subtitle).font(.app(size: 14)).foregroundStyle(.secondary)
                 }
                 PlayShuffleBar(tracks: entry.tracks, title: entry.title).padding(.top, 4)
             }
@@ -481,8 +481,8 @@ struct SongPicker: View {
                 HStack(spacing: 12) {
                     ArtworkView(track: track).thumbnail().frame(width: 44, height: 44)
                     VStack(alignment: .leading) {
-                        Text(track.title).font(.system(size: 16, weight: .medium))
-                        Text(track.artist).font(.system(size: 13)).foregroundStyle(.secondary)
+                        Text(track.title).font(.app(size: 16, weight: .medium))
+                        Text(track.artistCredit).font(.app(size: 13)).foregroundStyle(.secondary)
                     }
                 }
                 .tag(track.id)

@@ -27,6 +27,8 @@ nonisolated enum SongListMatcher {
         // Drop "(Remastered 2011)", "[Live]", "feat. …".
         t = t.replacingOccurrences(of: #"\s*[\(\[][^\)\]]*[\)\]]"#, with: "", options: .regularExpression)
         t = t.replacingOccurrences(of: #"\s+(feat\.?|ft\.?|featuring)\s.*$"#, with: "", options: .regularExpression)
+        // Streaming services' "Song - Remastered 2011", "Song - Radio Edit".
+        t = t.replacingOccurrences(of: #"\s+-\s+[^-]*(remaster|version|edit|live|mono|stereo|mix|acoustic|deluxe)[^-]*$"#, with: "", options: .regularExpression)
         t = t.replacingOccurrences(of: "&", with: " and ")
         t = String(t.map { $0.isLetter || $0.isNumber ? $0 : " " })
         return t.split(separator: " ").joined(separator: " ")
@@ -126,9 +128,22 @@ struct SongListImportView: View {
     @State private var progress: (Int, Int)?
     @State private var searchModules = true
     @State private var created: String?
+    /// A playlist link from another service was read: where from, and anything the user should know (e.g. only 100 songs).
+    @State private var fetchedFrom: String?
+    @State private var fetchNote: String?
+    @State private var fetchError: String?
+    @State private var clipboardHasLink = false
     @FocusState private var editorFocused: Bool
 
-    private var lines: [String] { text.split(whereSeparator: \.isNewline).map(String.init).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty } }
+    private var lines: [String] {
+        SongListCSV.lines(from: text)
+            ?? text.split(whereSeparator: \.isNewline).map(String.init).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+    }
+    /// The text is just a shared link (maybe with "Check out this playlist…" around it), not a song list.
+    private var linkOnly: Bool {
+        text.split(whereSeparator: \.isNewline).count <= 2 && (PlaylistLink.detect(in: text) != nil || PlaylistLink.isShortLink(text) != nil)
+    }
+    private var linkLabel: String { PlaylistLink.detect(in: text)?.label ?? "Shared link" }
     private var chosen: [SongLineMatch] { results.filter { !excluded.contains($0.id) && ($0.trackID != nil || $0.online != nil) } }
     private var modulesAvailable: Bool { ModuleStore.shared.hasSearchModules }
 
@@ -140,16 +155,20 @@ struct SongListImportView: View {
                         TextField("Playlist Name", text: $name)
                         ZStack(alignment: .topLeading) {
                             if text.isEmpty {
-                                Text("Deftones - Lhabia\nDeftones - Kimdracula\nFrank Ocean - Nights")
+                                Text("Deftones - Lhabia\nDeftones - Kimdracula\nFrank Ocean - Nights\n\nor a playlist link from Spotify, Apple Music, YouTube Music or Deezer")
                                     .foregroundStyle(.tertiary)
                                     .padding(.top, 8).padding(.leading, 5)
                             }
                             TextEditor(text: $text)
                                 .focused($editorFocused)
                                 .frame(minHeight: 220)
-                                .font(.system(size: 15, design: .monospaced))
+                                .font(.app(size: 15, design: .monospaced))
                                 .autocorrectionDisabled()
                                 .textInputAutocapitalization(.never)
+                        }
+                        if linkOnly {
+                            Label(linkLabel, systemImage: "link")
+                                .foregroundStyle(Theme.accent)
                         }
                         if modulesAvailable {
                             Toggle("Search Extensions for Missing Songs", isOn: $searchModules)
@@ -161,12 +180,17 @@ struct SongListImportView: View {
                             }
                             .labelStyle(.titleAndIcon)
                             .buttonBorderShape(.capsule)
+                            if clipboardHasLink && text.isEmpty {
+                                Text("Link copied").font(.app(.footnote)).foregroundStyle(.secondary)
+                            }
                             Spacer()
-                            Text("\(lines.count) lines").font(.footnote).foregroundStyle(.secondary)
+                            if !linkOnly {
+                                Text("\(lines.count) lines").font(.app(.footnote)).foregroundStyle(.secondary)
+                            }
                         }
                         .buttonStyle(.borderless)
                     } header: { Text("Song List") } footer: {
-                        Text("One song per line: “Artist - Title”. Copy the list from another app (Spotify, Apple Music, a note…). Typos are fine. MRSC finds the closest songs in your library, on your server and, if you have extensions, through them.")
+                        Text("Paste a playlist link from Spotify, Apple Music, YouTube Music or Deezer, or share it to MRSC from that app. A song list works too: one song per line, “Artist - Title”, typos are fine. MRSC finds the closest songs in your library, on your server and, if you have extensions, through them.")
                     }
                 } else {
                     let found = results.filter { $0.status == .found }.count
@@ -179,6 +203,10 @@ struct SongListImportView: View {
                             stat("\(check)", "Check", .orange)
                             stat("\(missing)", "Missing", .secondary)
                         }
+                    } footer: {
+                        if fetchedFrom != nil || fetchNote != nil {
+                            Text([fetchedFrom.map { "\(songCount(results.count)) from \($0)." }, fetchNote].compactMap { $0 }.joined(separator: " "))
+                        }
                     }
                     Section("Songs") {
                         ForEach(results) { r in row(r) }
@@ -190,18 +218,18 @@ struct SongListImportView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(results.isEmpty ? "Cancel" : "Back") {
-                        if results.isEmpty { dismiss() } else { results = []; excluded = [] }
+                        if results.isEmpty { dismiss() } else { results = []; excluded = []; fetchedFrom = nil; fetchNote = nil }
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if matching {
                         HStack(spacing: 6) {
                             ProgressView()
-                            if let (d, t) = progress { Text("\(d)/\(t)").font(.caption).monospacedDigit() }
+                            if let (d, t) = progress { Text("\(d)/\(t)").font(.app(.caption)).monospacedDigit() }
                         }
                     }
                     else if results.isEmpty {
-                        Button("Find Songs") { Task { await runMatch() } }.disabled(lines.isEmpty)
+                        Button(linkOnly ? "Import" : "Find Songs") { Task { await runMatch() } }.disabled(lines.isEmpty)
                     } else {
                         Button("Create") { create() }.disabled(chosen.isEmpty)
                     }
@@ -210,14 +238,27 @@ struct SongListImportView: View {
             .alert(created ?? "", isPresented: Binding(get: { created != nil }, set: { if !$0 { created = nil; dismiss() } })) {
                 Button("OK") {}
             }
-            .onAppear { editorFocused = true }
+            .alert("Couldn't Read Playlist", isPresented: Binding(get: { fetchError != nil }, set: { if !$0 { fetchError = nil } })) {
+                Button("OK") {}
+            } message: { Text(fetchError ?? "") }
+            .onAppear {
+                if !takeSharedLink() { editorFocused = true }
+                clipboardHasLink = UIPasteboard.general.hasURLs
+            }
+            .onChange(of: PlaylistLinkInbox.shared.pending) { _, _ in
+                if results.isEmpty, !matching { _ = takeSharedLink() }
+            }
+            // A link pasted into the empty field starts right away; a song list waits for Find Songs.
+            .onChange(of: text) { old, _ in
+                if old.isEmpty, linkOnly, !matching { Task { await runMatch() } }
+            }
         }
     }
 
     private func stat(_ value: String, _ label: String, _ color: Color) -> some View {
         VStack(spacing: 1) {
-            Text(value).font(.title3.bold()).foregroundStyle(color)
-            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.app(.title3).bold()).foregroundStyle(color)
+            Text(label).font(.app(.caption)).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
     }
@@ -231,7 +272,7 @@ struct SongListImportView: View {
                 if excluded.contains(r.id) { excluded.remove(r.id) } else { excluded.insert(r.id) }
             } label: {
                 Image(systemName: !has ? "xmark.circle" : on ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
+                    .font(.app(.title3))
                     .foregroundStyle(!has ? Color.secondary : r.status == .check ? .orange : Theme.accent)
             }
             .buttonStyle(.plain)
@@ -242,13 +283,13 @@ struct SongListImportView: View {
                     .frame(width: 40, height: 40).clipShape(RoundedRectangle(cornerRadius: 6))
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(r.line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(r.line).font(.app(.caption)).foregroundStyle(.secondary).lineLimit(1)
                 if has {
-                    Text(r.title).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                    Text(r.title).font(.app(size: 15, weight: .semibold)).lineLimit(1)
                     Text(r.artist + (r.onlineSource.map { " · from \($0)" } ?? "") + (r.status == .check ? " · please check" : ""))
-                        .font(.caption).foregroundStyle(r.status == .check ? .orange : .secondary).lineLimit(1)
+                        .font(.app(.caption)).foregroundStyle(r.status == .check ? .orange : .secondary).lineLimit(1)
                 } else {
-                    Text("Not in your library").font(.system(size: 14)).foregroundStyle(.secondary)
+                    Text("Not in your library").font(.app(size: 14)).foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 0)
@@ -275,8 +316,42 @@ struct SongListImportView: View {
         excluded.remove(id)
     }
 
+    /// A link handed over by the Share Extension.
+    private func takeSharedLink() -> Bool {
+        guard let link = PlaylistLinkInbox.shared.pending else { return false }
+        PlaylistLinkInbox.shared.pending = nil
+        let wasEmpty = text.isEmpty
+        text = link   // an empty field starts the import through onChange(of: text)
+        if !wasEmpty { Task { await runMatch() } }
+        return true
+    }
+
+    /// Replaces a pasted link with the playlist's songs. False when it couldn't be read (the alert says why).
+    private func fetchLink() async -> Bool {
+        var link = PlaylistLink.detect(in: text)
+        if link == nil, let short = PlaylistLink.isShortLink(text) { link = await PlaylistLinkFetcher.resolve(short) }
+        guard let link else {
+            fetchError = "MRSC couldn't tell which playlist this link points to. Open it in its app and share or copy the playlist link."
+            return false
+        }
+        do {
+            let playlist = try await PlaylistLinkFetcher.fetch(link)
+            if name == "Imported Playlist" || name.isEmpty { name = playlist.name }
+            text = playlist.lines.joined(separator: "\n")
+            fetchedFrom = link.service.name
+            fetchNote = playlist.note
+            return true
+        } catch {
+            fetchError = (error as? LocalizedError)?.errorDescription ?? "The playlist couldn't be loaded. Check your connection and try again."
+            return false
+        }
+    }
+
     private func runMatch() async {
         matching = true
+        if linkOnly {
+            guard await fetchLink() else { matching = false; return }
+        }
         let entries = library.tracks.map {
             SongListMatcher.Entry(id: $0.id, title: SongListMatcher.normalize($0.title), artist: SongListMatcher.normalize($0.artist),
                                   rawTitle: $0.title, rawArtist: $0.artist)

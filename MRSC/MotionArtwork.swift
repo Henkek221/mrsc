@@ -6,6 +6,8 @@ import SwiftUI
 
 /// Animated album covers ("motion artwork") from the Apple Music catalog.
 /// Needs the MusicKit app service on the App ID and the user's OK; without either it quietly finds nothing.
+/// Apple has said `editorialVideo` isn't returned to third-party developer tokens, so this may find nothing even then.
+/// The Lock Screen doesn't depend on it: it animates the cover itself (LockScreenArtwork.swift).
 enum MotionArtwork {
     static var isAvailable: Bool { MusicAuthorization.currentStatus == .authorized }
 

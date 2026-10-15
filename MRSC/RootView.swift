@@ -102,7 +102,14 @@ struct RootView: View {
         @Bindable var router = router
         Group {
             if layout.usesClassicBar {
-                tabs.overlay { SearchLayer() }
+                tabs.overlay {
+                    SearchLayer()
+                        .opacity(router.selecting ? 0 : 1)
+                        .allowsHitTesting(!router.selecting)
+                        .animation(.smooth(duration: 0.25), value: router.selecting)
+                }
+            } else if #available(iOS 26.1, *) {
+                tabs.tabViewBottomAccessory(isEnabled: !router.selecting) { MiniPlayer() }
             } else {
                 tabs.tabViewBottomAccessory { MiniPlayer() }
             }
@@ -110,12 +117,14 @@ struct RootView: View {
         .fullScreenCover(isPresented: $router.showPlayer) {
             NowPlayingView()
         }
-        .sheet(isPresented: $router.showSettings) { SettingsView().environment(\.inSettings, true) }
+        // Page-sized on iPad: the default form sheet only fits a handful of rows on a 13" screen.
+        .sheet(isPresented: $router.showSettings) { SettingsView().environment(\.inSettings, true).presentationSizing(.page) }
         .fullScreenCover(isPresented: $router.showFullLyrics) { FullScreenLyricsView() }
         .fullScreenCover(isPresented: $router.showOnboarding) { OnboardingView() }
         .sheet(isPresented: $router.showGoodbye) { GoodbyeView() }
         .onReceive(NotificationCenter.default.publisher(for: QuickActions.didRequest)) { _ in QuickActions.consume(router) }
         .sheet(isPresented: $router.showSongListImport) { SongListImportView() }
+        .playlistLinkHandoff(router: router)
         .sheet(isPresented: $router.showAdd) { AddMusicSheet() }
         .fileImporter(isPresented: $router.showImporter,
                       allowedContentTypes: router.importKind?.contentTypes ?? [.audio],
@@ -128,6 +137,7 @@ struct RootView: View {
         .animation(.smooth, value: library.importStatus != nil)
         .sheet(item: $router.moduleInstall) { ModuleInstallSheet(prompt: $0) }
         .onOpenURL { url in
+            if PlaylistLinkInbox.shared.handle(url, router: router) { return }
             if let prompt = ModuleInstallPrompt.from(url) { router.moduleInstall = prompt; return }
             let ext = url.pathExtension.lowercased()
             if ext == "8spine" || ext == "js" {
@@ -159,7 +169,9 @@ struct RootView: View {
         @Bindable var router = router
         return TabView(selection: $router.tab) {
             ForEach(layout.tabs) { item in
-                Tab(item.title, systemImage: item.icon, value: item.appTab) { tabRoot(item) }
+                Tab(value: item.appTab) { tabRoot(item) } label: {
+                    Label { Text(item.title) } icon: { Image.icon(item.icon, fallback: item.kind.icon) }
+                }
             }
             if !layout.usesClassicBar && layout.searchEnabled {
                 Tab(value: AppTab.search, role: .search) {
@@ -233,10 +245,12 @@ struct RouteView: View {
 /// Search field for the standard tab-bar layout (the classic layout uses the floating search pill).
 struct SearchFieldBar: View {
     @Environment(Router.self) private var router
+    @Environment(PlayerModel.self) private var player
     @FocusState private var focused: Bool
 
     var body: some View {
         @Bindable var router = router
+        let shazam = ShazamListener.shared
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(Theme.accent)
             TextField("Songs, Artists, Albums — or “fast songs from 2016”", text: $router.searchText)
@@ -246,6 +260,21 @@ struct SearchFieldBar: View {
             if !router.searchText.isEmpty {
                 Button { router.searchText = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                     .buttonStyle(.plain)
+            } else {
+                // Recognise the song playing nearby, then search for it (same as the floating search pill).
+                Button {
+                    focused = false
+                    shazam.toggle(router: router, player: player)
+                } label: {
+                    Image(systemName: "shazam.logo.fill")
+                        .font(.app(size: 20))
+                        .foregroundStyle(shazam.listening ? Theme.accent : .secondary)
+                        .animation(.smooth(duration: 0.35), value: shazam.listening)
+                        .frame(width: 32, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(shazam.listening ? "Stop Listening" : "Shazam")
             }
         }
         .padding(.horizontal, 16)
@@ -254,6 +283,7 @@ struct SearchFieldBar: View {
         .padding(.horizontal, 16)
         .padding(.bottom, 6)
         .onAppear { if router.searchText.isEmpty { focused = true } }
+        .onDisappear { if ShazamListener.shared.listening { ShazamListener.shared.cancel() } }
     }
 }
 

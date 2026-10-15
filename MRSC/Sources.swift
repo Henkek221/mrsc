@@ -50,6 +50,8 @@ nonisolated struct RemoteTrack: Sendable {
     var remoteID: String
     var title: String
     var artist: String
+    /// Everyone credited, main artist first, when the server lists more than one.
+    var artists: [String]? = nil
     var album: String
     var albumArtist: String?
     var albumID: String?
@@ -285,10 +287,11 @@ nonisolated struct JellyfinClient: MusicSourceClient {
     }
 
     private func map(_ i: Item) -> RemoteTrack {
-        let artist = i.Artists?.first ?? i.AlbumArtist ?? "Unknown Artist"
+        let credited = ArtistCredit.unique(i.Artists ?? [])
         return RemoteTrack(remoteID: i.Id,
                            title: i.Name ?? "Untitled",
-                           artist: artist,
+                           artist: credited.first ?? i.AlbumArtist ?? "Unknown Artist",
+                           artists: credited.count > 1 ? credited : nil,
                            album: i.Album ?? "Unknown Album",
                            albumArtist: i.AlbumArtist,
                            albumID: i.AlbumId,
@@ -499,6 +502,8 @@ nonisolated struct SubsonicClient: MusicSourceClient {
         let title: String?
         let album: String?
         let artist: String?
+        /// OpenSubsonic: every credited artist.
+        let artists: [Named]?
         let albumId: ID?
         let coverArt: ID?
         let duration: Int?
@@ -515,6 +520,7 @@ nonisolated struct SubsonicClient: MusicSourceClient {
         let replayGain: ReplayGain?
         let isVideo: Bool?
     }
+    private struct Named: Decodable { let name: String? }
     private struct Search: Decodable {
         struct Result: Decodable { let song: [Song]? }
         let searchResult3: Result?
@@ -561,9 +567,12 @@ nonisolated struct SubsonicClient: MusicSourceClient {
     }
 
     private func map(_ s: Song) -> RemoteTrack {
-        RemoteTrack(remoteID: s.id.value,
+        // `artist` is the display credit ("A feat. B", "A • B"); with a list, group by the main artist instead.
+        let credited = ArtistCredit.unique(s.artists?.compactMap(\.name) ?? [])
+        return RemoteTrack(remoteID: s.id.value,
                     title: s.title ?? "Untitled",
-                    artist: s.artist ?? s.displayAlbumArtist ?? "Unknown Artist",
+                    artist: credited.count > 1 ? credited[0] : s.artist ?? s.displayAlbumArtist ?? "Unknown Artist",
+                    artists: credited.count > 1 ? credited : nil,
                     album: s.album ?? "Unknown Album",
                     albumArtist: s.displayAlbumArtist,
                     // Art is fetched by this id, so prefer the cover id; servers usually share it across an album.
@@ -898,7 +907,7 @@ final class SourceManager {
                durations.contains(where: { abs($0 - r.duration) < 3 }) { continue }
             var t = byRemote[r.remoteID] ?? Track(title: r.title, artist: r.artist, album: r.album, duration: r.duration, path: "")
             if t.metadataLocked != true {
-                t.title = r.title; t.artist = r.artist; t.album = r.album
+                t.title = r.title; t.artist = r.artist; t.artists = r.artists; t.album = r.album
                 t.trackNumber = r.trackNumber; t.discNumber = r.discNumber
                 t.albumArtist = r.albumArtist; t.year = r.year; t.genre = r.genre; t.composer = r.composer
             }

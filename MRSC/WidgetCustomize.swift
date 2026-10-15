@@ -62,7 +62,7 @@ struct WidgetCustomizer: View {
 
     private var lockScreen: some View {
         VStack(spacing: 12) {
-            Text("9:41").font(.system(size: 56, weight: .bold, design: .rounded))
+            Text("9:41").font(.app(size: 56, weight: .bold, design: .rounded))
             HStack(spacing: 12) {
                 NowPlayingWidgetContent(state: state, style: style, family: .accessoryCircular)
                     .frame(width: 60, height: 60)
@@ -117,7 +117,7 @@ struct WidgetCustomizer: View {
                     let (name, icon) = label(o)
                     Button { withAnimation(.smooth(duration: 0.3)) { selection.wrappedValue = o } } label: {
                         Label(name, systemImage: icon)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.app(size: 14, weight: .semibold))
                             .foregroundStyle(on ? Color(.systemBackground) : .primary)
                             .padding(.horizontal, 14).frame(height: 36)
                             .background(Capsule().fill(on ? Color.primary : Color.primary.opacity(0.08)))

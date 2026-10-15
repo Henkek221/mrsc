@@ -13,6 +13,7 @@ struct ArtistDetailView: View {
     @State private var titleShown = false
     @State private var about: AboutInfo?
     @State private var catalogLoader = ArtistCatalogLoader()
+    @State private var selecting = false
 
     private var request: ArtistCatalogLoader.Request {
         ArtistCatalogLoader.Request(name: name, offline: settings.offlineMode, online: NetworkMonitor.shared.isOnline,
@@ -51,7 +52,7 @@ struct ArtistDetailView: View {
                 if !catalogLoader.failedModules.isEmpty {
                     VStack(spacing: 8) {
                         Text("Some songs or albums couldn’t be loaded from \(catalogLoader.failedModules.joined(separator: ", ")).")
-                            .font(.subheadline).foregroundStyle(.secondary)
+                            .font(.app(.subheadline)).foregroundStyle(.secondary)
                         Button("Retry") { Task { await catalogLoader.load(request) } }
                             .disabled(catalogLoader.loading)
                     }
@@ -79,6 +80,11 @@ struct ArtistDetailView: View {
         .navigationTitle(titleShown ? name : "")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                Button { selecting = true } label: { Image(systemName: "checkmark.circle") }
+                    .accessibilityLabel("Select Songs")
+                    .disabled(catalog.tracks.isEmpty)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     ArtistCatalogMenu(catalog: catalog, tracks: catalog.tracks, title: name)
                     if let entry = library.entry(.artist, name) {
@@ -95,6 +101,9 @@ struct ArtistDetailView: View {
                 .disabled(catalog.tracks.isEmpty)
             }
         }
+        .sheet(isPresented: $selecting) {
+            TrackSelectionSheet(title: name, tracks: catalog.current(catalog.tracks, library: library)) { catalog.resolve($0, library: library) }
+        }
     }
 
     // MARK: Header
@@ -107,11 +116,11 @@ struct ArtistDetailView: View {
                 .shadow(color: .black.opacity(0.25), radius: 22, y: 10)
             VStack(spacing: 4) {
                 Text(name)
-                    .font(.system(size: 30, weight: .bold))
+                    .font(.app(size: 30, weight: .bold))
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                 Text(summary(entry, albums: albums, genre: stats.genre))
-                    .font(.system(size: 14))
+                    .font(.app(size: 14))
                     .foregroundStyle(.secondary)
             }
             HStack(spacing: 12) {
@@ -125,7 +134,7 @@ struct ArtistDetailView: View {
                 .buttonStyle(.glass)
             }
             .disabled(entry.tracks.isEmpty)
-            .font(.system(size: 17, weight: .semibold))
+            .font(.app(size: 17, weight: .semibold))
             .controlSize(.large)
             .tint(Theme.accent)
             .padding(.top, 6)
@@ -170,7 +179,7 @@ struct ArtistDetailView: View {
             }
             if let line = stats.rankLine {
                 Text(line)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.app(size: 13, weight: .medium))
                     .foregroundStyle(Theme.accent)
             }
         }
@@ -183,11 +192,11 @@ struct ArtistDetailView: View {
     private func stat(_ value: Text, _ label: String) -> some View {
         VStack(spacing: 3) {
             value
-                .font(.system(size: 20, weight: .semibold))
+                .font(.app(size: 20, weight: .semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Text(label)
-                .font(.system(size: 12))
+                .font(.app(size: 12))
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 4)
@@ -235,8 +244,8 @@ struct ArtistDetailView: View {
                                     .frame(width: 150, height: 150)
                                     .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(album.title).font(.system(size: 14, weight: .medium)).lineLimit(1)
-                                    Text(albumDetail(album)).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                                    Text(album.title).font(.app(size: 14, weight: .medium)).lineLimit(1)
+                                    Text(albumDetail(album)).font(.app(size: 12)).foregroundStyle(.secondary).lineLimit(1)
                                 }
                                 .frame(width: 150, alignment: .leading)
                             }
@@ -266,7 +275,7 @@ struct ArtistDetailView: View {
     }
 
     private func sectionTitle(_ text: String) -> some View {
-        Text(text).font(.system(size: 22, weight: .bold))
+        Text(text).font(.app(size: 22, weight: .bold))
     }
 }
 
@@ -288,7 +297,7 @@ private struct ArtistStats {
         for t in library.allTracks {
             let n = t.playCount ?? 0
             if n > 0 { totals[t.artist, default: 0] += n }
-            if ArtistCatalog.matches(t.artist, name: name) || ArtistCatalog.matches(t.albumArtist ?? "", name: name) { mine.append(t) }
+            if t.credits(name) || ArtistCatalog.matches(t.albumArtist ?? "", name: name) { mine.append(t) }
         }
         for t in mine {
             let n = t.playCount ?? 0
@@ -340,7 +349,7 @@ struct ArtistSongsView: View {
                     Section {
                         ForEach(list) { row($0, in: tracks) }
                     } header: {
-                        Label("\(origin.title) · \(list.count)", systemImage: origin.symbol).font(.system(size: 15, weight: .semibold))
+                        Label("\(origin.title) · \(list.count)", systemImage: origin.symbol).font(.app(size: 15, weight: .semibold))
                     }
                 }
             } else {
@@ -516,26 +525,26 @@ struct AboutCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.system(size: 22, weight: .bold))
+            Text(title).font(.app(size: 22, weight: .bold))
             VStack(alignment: .leading, spacing: 10) {
                 if !info.facts.isEmpty {
                     Text(info.facts.joined(separator: " · "))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.app(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.accent)
                 }
                 Text(info.summary)
-                    .font(.system(size: 15))
+                    .font(.app(size: 15))
                     .lineSpacing(2)
                     .lineLimit(expanded ? nil : 4)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
-                    Text(expanded ? "Less" : "More").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.accent)
+                    Text(expanded ? "Less" : "More").font(.app(size: 14, weight: .semibold)).foregroundStyle(Theme.accent)
                     Spacer()
                     if let page = info.pageURL {
                         Link(destination: page) {
                             Label("Wikipedia", systemImage: "arrow.up.right").labelStyle(TrailingIconLabel())
                         }
-                        .font(.system(size: 13))
+                        .font(.app(size: 13))
                         .foregroundStyle(.secondary)
                     }
                 }

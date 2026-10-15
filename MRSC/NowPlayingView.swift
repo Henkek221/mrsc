@@ -1,5 +1,6 @@
 import SwiftUI
 import Translation
+import MediaPlayer
 
 // MARK: - Full player
 
@@ -29,8 +30,11 @@ struct NowPlayingView: View {
     @State private var wiggle = false
     @State private var showAllSettings = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @Namespace private var ns
     private var theme: AppTheme { draft ?? ThemeStore.shared.current }
+    /// The artwork caps are tuned for iPhone; the wider iPad column gets a bigger cover.
+    private var artScale: CGFloat { theme.artworkScale * (sizeClass == .regular ? 1.45 : 1) }
     private var editing: Bool { draft != nil }
     private var cfg: PlayerConfig { theme.player }
 
@@ -66,6 +70,8 @@ struct NowPlayingView: View {
                 .padding(.horizontal, 24)
                 .padding(.top, editing ? 76 : 34)
                 .padding(.bottom, 8 + cfg.spacing.bottomLift)
+                // On iPad the player stays a phone-wide column in the middle instead of stretching the controls edge to edge.
+                .frame(maxWidth: 640)
                 .animation(.smooth(duration: 0.45), value: mode)
                 .sheet(isPresented: $showEQ) { EqualizerSheet() }
                 .sheet(isPresented: $editLyrics) { LyricsEditor(track: track) }
@@ -131,11 +137,14 @@ struct NowPlayingView: View {
     @ViewBuilder private func block(_ b: PlayerBlock, _ track: Track) -> some View {
         switch b {
         case .artwork:
-            artwork(track).frame(maxHeight: .infinity).contentShape(Rectangle()).gesture(dismissDrag)
+            artwork(track)
+                .skipPulse(trigger: track.id, enabled: !reduceMotion)
+                .frame(maxHeight: .infinity).contentShape(Rectangle()).gesture(dismissDrag)
                 .onLongPressGesture(minimumDuration: 0.45) { if !editing { enterEdit() } }
         case .title: titleRow(track, compact: false).contentShape(Rectangle()).gesture(dismissDrag)
         case .scrubber: ScrubberSection(showEQ: { showEQ = true }, showPreset: cfg.showEQBadge, showTimes: cfg.showTimes)
         case .controls: controls
+        case .volume: VolumeSlider()
         case .bar: bottomBar
         }
     }
@@ -161,6 +170,13 @@ struct NowPlayingView: View {
                     }
                     .clipped()
                 LinearGradient(colors: [.black.opacity(0.15), .black.opacity(0.65)], startPoint: .top, endPoint: .bottom)
+            case .livingArtwork:
+                if let track {
+                    LivingArtwork(track: track, moving: player.isPlaying && theme.motion != .off && !reduceMotion)
+                        .id(track.id)
+                        .transition(.opacity)
+                }
+                Color.black.opacity(0.18 + theme.transparency * 0.3)
             case .themeColors:
                 LinearGradient(colors: theme.colors, startPoint: .top, endPoint: .bottom)
                 LinearGradient(colors: [tint.opacity(0.35 * (1 - theme.transparency)), .clear], startPoint: .top, endPoint: .center)
@@ -176,8 +192,9 @@ struct NowPlayingView: View {
     @ViewBuilder private func artwork(_ track: Track) -> some View {
         switch theme.playerLayout {
         case .classic:
+            // Capped by width too: on a phone both layouts would otherwise just fill the column and look the same.
             ArtworkView(track: track, radius: 20).animatedCover()
-                .frame(maxHeight: 380 * theme.artworkScale)
+                .frame(maxWidth: 300 * artScale, maxHeight: 300 * artScale)
                 .matchedGeometryEffect(id: "art", in: ns)
                 .scaleEffect(player.isPlaying ? 1 : 0.84)
                 .shadow(color: .black.opacity(player.isPlaying ? 0.45 : 0.2), radius: player.isPlaying ? 28 : 10, y: player.isPlaying ? 16 : 6)
@@ -186,7 +203,7 @@ struct NowPlayingView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
         case .large:
             ArtworkView(track: track, radius: 12).animatedCover()
-                .frame(maxHeight: 470 * theme.artworkScale)
+                .frame(maxHeight: 470 * artScale)
                 .matchedGeometryEffect(id: "art", in: ns)
                 .scaleEffect(player.isPlaying ? 1 : 0.94)
                 .shadow(color: .black.opacity(0.4), radius: 24, y: 14)
@@ -196,7 +213,7 @@ struct NowPlayingView: View {
                 .padding(.horizontal, -8)
         case .vinyl:
             VinylArtwork(track: track, spinning: player.isPlaying)
-                .frame(maxHeight: 350 * theme.artworkScale)
+                .frame(maxHeight: 350 * artScale)
                 .matchedGeometryEffect(id: "art", in: ns)
                 .id(track.id)
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
@@ -207,7 +224,7 @@ struct NowPlayingView: View {
                     .matchedGeometryEffect(id: "art", in: ns)
                     .shadow(color: .black.opacity(0.35), radius: 14, y: 8)
                 Image(systemName: "waveform")
-                    .font(.system(size: 34, weight: .semibold))
+                    .font(.app(size: 34, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.7))
                     .symbolEffect(.variableColor.iterative, isActive: player.isPlaying)
             }
@@ -227,19 +244,50 @@ struct NowPlayingView: View {
             let buttons = (cfg.showStar ? 1 : 0) + (cfg.showTitleMenu ? 1 : 0)
             // A centred title sits in the middle of the whole row; long ones use the room up to the buttons, then scroll.
             let shift = buttons == 0 ? 0 : CGFloat(buttons * 42 + (buttons - 1) * 12 + 12) / 2
+            // Each line swaps on its own, overlapping in place, the artist a beat after the title.
             VStack(alignment: centered ? .center : .leading, spacing: 2) {
-                MarqueeText(text: track.title, centered: centered, centerShift: shift)
-                    .font(.system(size: compact ? 17 : 22, weight: .bold))
-                MarqueeText(text: track.artist, centered: centered, centerShift: shift)
-                    .font(.system(size: compact ? 15 : 19))
-                    .foregroundStyle(.white.opacity(0.6))
+                ZStack {
+                    MarqueeText(text: track.title, centered: centered, centerShift: shift)
+                        .font(.app(size: compact ? 17 : 22, weight: .bold))
+                        .id(track.id)
+                        .transition(TrackTextTransition().animation(.smooth(duration: 0.45)))
+                }
+                ZStack {
+                    artistLine(track, centered: centered, shift: shift)
+                        .font(.app(size: compact ? 15 : 19))
+                        .id(track.id)
+                        .transition(TrackTextTransition().animation(.smooth(duration: 0.45).delay(0.06)))
+                }
             }
             .frame(maxWidth: .infinity, alignment: centered ? .center : .leading)
-            .id(track.id)
-            .transition(.blurReplace)
             if buttons > 0 { titleButtons(track) }
         }
         .animation(.smooth, value: track.id)
+    }
+
+    /// The full credit. Tapping it opens the artist, or lists each credited artist when there are several.
+    @ViewBuilder private func artistLine(_ track: Track, centered: Bool, shift: CGFloat) -> some View {
+        let names = track.creditedArtists
+        let line = MarqueeText(text: track.artistCredit, centered: centered, centerShift: shift)
+            .foregroundStyle(.white.opacity(0.6))
+            .contentShape(Rectangle())
+        if track.artist == "Unknown Artist" {
+            line
+        } else if names.count > 1 {
+            Menu {
+                Section("Go to Artist") {
+                    ForEach(names, id: \.self) { name in
+                        Button(name) { router.open(.artist(name)) }
+                    }
+                }
+            } label: { line }
+            .buttonStyle(.plain)
+            .accessibilityHint("Shows the credited artists")
+        } else {
+            Button { router.open(.artist(track.artist)) } label: { line }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the artist")
+        }
     }
 
     private func titleButtons(_ track: Track) -> some View {
@@ -247,7 +295,7 @@ struct NowPlayingView: View {
             if cfg.showStar {
             Button { library.toggleFavorite(track) } label: {
                 Image(systemName: track.isFavorite ? "star.fill" : "star")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.app(size: 17, weight: .semibold))
                     .foregroundStyle(track.isFavorite ? .yellow : .white)
                     .frame(width: 42, height: 42)
                     .contentTransition(.symbolEffect(.replace))
@@ -260,16 +308,16 @@ struct NowPlayingView: View {
         }
     }
 
-    private func moreMenu(_ track: Track, size: CGFloat) -> some View {
+    private func moreMenu(_ track: Track, size: CGFloat, glass: Bool = true) -> some View {
         Menu {
             ForEach(cfg.menu.filter(\.visible)) { entry in menuItem(entry.item, track) }
             Divider()
             Button { enterEdit() } label: { Label("Customize Player", systemImage: "slider.horizontal.below.square.and.square.filled") }
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 17, weight: .semibold))
+                .font(.app(size: 17, weight: .semibold))
                 .frame(width: size, height: size)
-                .glassEffect(.regular.interactive(), in: .circle)
+                .glassEffect(glass ? .regular.interactive() : .identity, in: .circle)
                 .overlay { downloadRing(track) }
         }
         .buttonStyle(.plain)
@@ -366,7 +414,7 @@ struct NowPlayingView: View {
                     Button { showAllSettings = true } label: { Label("“…” Menu & All Settings", systemImage: "list.bullet") }
                 } label: {
                     Label("Layouts", systemImage: "square.grid.2x2")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.app(size: 15, weight: .semibold))
                         .padding(.horizontal, 14).frame(height: 36)
                         .glassEffect(.regular.interactive(), in: Capsule())
                 }
@@ -377,11 +425,11 @@ struct NowPlayingView: View {
                     .tint(.white)
                     .foregroundStyle(.black)
             }
-            .font(.system(size: 15, weight: .semibold))
+            .font(.app(size: 15, weight: .semibold))
             .padding(.horizontal, 16)
             .padding(.top, 6)
             Text(editTarget == nil ? "Drag to move · Tap to change · Tap the background for colors" : " ")
-                .font(.system(size: 12, weight: .medium))
+                .font(.app(size: 12, weight: .medium))
                 .foregroundStyle(.white.opacity(0.6))
             Spacer()
         }
@@ -402,7 +450,7 @@ struct NowPlayingView: View {
                             }
                         } label: {
                             Label(b.title, systemImage: "plus")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.app(size: 13, weight: .semibold))
                                 .padding(.horizontal, 12).frame(height: 32)
                                 .glassEffect(.regular.interactive(), in: Capsule())
                         }
@@ -438,7 +486,7 @@ struct NowPlayingView: View {
                                 if editTarget == .block(b) { editTarget = nil }
                             }
                         } label: {
-                            Image(systemName: "minus").font(.system(size: 12, weight: .heavy)).foregroundStyle(.black)
+                            Image(systemName: "minus").font(.app(size: 12, weight: .heavy)).foregroundStyle(.black)
                                 .frame(width: 24, height: 24).background(Circle().fill(.white))
                                 .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
                         }
@@ -450,7 +498,7 @@ struct NowPlayingView: View {
                     // Adding buttons sits on the outline, not in the row, so the row looks exactly like it will.
                     if b == .bar {
                         Button { withAnimation(.smooth(duration: 0.3)) { editTarget = .block(.bar) } } label: {
-                            Image(systemName: "plus").font(.system(size: 12, weight: .heavy)).foregroundStyle(.black)
+                            Image(systemName: "plus").font(.app(size: 12, weight: .heavy)).foregroundStyle(.black)
                                 .frame(width: 24, height: 24).background(Circle().fill(.white))
                                 .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
                         }
@@ -529,7 +577,7 @@ struct NowPlayingView: View {
                 Button { player.mixNow() } label: { Label("Mix Into Next Song", systemImage: item.icon) }
             }
         case .goArtist:
-            Button { router.open(.artist(track.artist)) } label: { Label("Go to Artist", systemImage: item.icon) }
+            GoToArtistItem(track: track, icon: item.icon)
         case .goAlbum:
             Button { router.open(.album("\(track.artist)|\(track.album)")) } label: { Label("Go to Album", systemImage: item.icon) }
         case .editMetadata:
@@ -582,7 +630,7 @@ struct NowPlayingView: View {
                 }
                 if phase == .done || phase == .failed {
                     Image(systemName: phase == .done ? "arrow.down.circle.fill" : "exclamationmark.circle.fill")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.app(size: 14, weight: .bold))
                         .foregroundStyle(.white, phase == .done ? Theme.accent : .red)
                         .offset(x: 15, y: 15)
                         .transition(.scale(scale: 0.3).combined(with: .opacity))
@@ -602,20 +650,14 @@ struct NowPlayingView: View {
                     toggleIcon("shuffle", on: player.shuffle) { player.setShuffle(!player.shuffle) }
                     Spacer()
                 }
-                Button { player.previous() } label: {
-                    Image(systemName: "backward.fill").font(.system(size: 34 * c)).frame(width: 64 * c, height: 64 * c)
-                }
-                .buttonStyle(PressScale())
-                .sensoryFeedback(.impact(weight: .light), trigger: player.currentIndex)
+                SkipButton(direction: .backward, size: 34 * c, box: CGSize(width: 64 * c, height: 64 * c)) { player.previous() }
+                    .sensoryFeedback(.impact(weight: .light), trigger: player.currentIndex)
                 Spacer()
                 Button { player.togglePlay() } label: { playButton(c) }
                     .buttonStyle(PressScale())
                     .sensoryFeedback(.impact(weight: .medium), trigger: player.isPlaying)
                 Spacer()
-                Button { player.next() } label: {
-                    Image(systemName: "forward.fill").font(.system(size: 34 * c)).frame(width: 64 * c, height: 64 * c)
-                }
-                .buttonStyle(PressScale())
+                SkipButton(direction: .forward, size: 34 * c, box: CGSize(width: 64 * c, height: 64 * c)) { player.next() }
                 if cfg.showShuffleRepeat {
                     Spacer()
                     toggleIcon(player.repeatMode == .one ? "repeat.1" : "repeat", on: player.repeatMode != .off) { player.cycleRepeat() }
@@ -630,17 +672,17 @@ struct NowPlayingView: View {
         let symbol = Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
         switch cfg.playStyle {
         case .glass:
-            symbol.font(.system(size: 28 * c, weight: .bold)).foregroundStyle(.black.opacity(0.75))
+            symbol.font(.app(size: 28 * c, weight: .bold)).foregroundStyle(.black.opacity(0.75))
                 .frame(width: 74 * c, height: 74 * c)
                 .contentTransition(.symbolEffect(.replace))
                 .glassEffect(.regular.tint(.white.opacity(0.92)).interactive(), in: .circle)
         case .accent:
-            symbol.font(.system(size: 28 * c, weight: .bold)).foregroundStyle(.white)
+            symbol.font(.app(size: 28 * c, weight: .bold)).foregroundStyle(.white)
                 .frame(width: 74 * c, height: 74 * c)
                 .contentTransition(.symbolEffect(.replace))
                 .glassEffect(.regular.tint(theme.accentColor).interactive(), in: .circle)
         case .plain:
-            symbol.font(.system(size: 46 * c, weight: .bold))
+            symbol.font(.app(size: 46 * c, weight: .bold))
                 .frame(width: 74 * c, height: 74 * c)
                 .contentTransition(.symbolEffect(.replace))
         }
@@ -650,7 +692,7 @@ struct NowPlayingView: View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: symbol)
-                    .font(.system(size: 19, weight: .semibold))
+                    .font(.app(size: 19, weight: .semibold))
                     .contentTransition(.symbolEffect(.replace))
                 Circle().frame(width: 4, height: 4).opacity(on ? 1 : 0)
             }
@@ -682,7 +724,7 @@ struct NowPlayingView: View {
         Group {
             if e.item == .spacer {
                 Capsule().strokeBorder(.white.opacity(0.45), style: StrokeStyle(lineWidth: 1.2, dash: [4, 4]))
-                    .overlay { Image(systemName: "arrow.left.and.right").font(.system(size: 13, weight: .bold)).foregroundStyle(.white.opacity(0.6)) }
+                    .overlay { Image(systemName: "arrow.left.and.right").font(.app(size: 13, weight: .bold)).foregroundStyle(.white.opacity(0.6)) }
                     .frame(minWidth: 36, maxWidth: .infinity)
                     .frame(height: Self.barHeight)
             } else {
@@ -691,7 +733,7 @@ struct NowPlayingView: View {
         }
         .overlay(alignment: .topLeading) {
             Button { withAnimation(.smooth(duration: 0.3)) { draft?.player.bar.removeAll { $0.id == e.id } } } label: {
-                Image(systemName: "minus").font(.system(size: 10, weight: .heavy)).foregroundStyle(.black)
+                Image(systemName: "minus").font(.app(size: 10, weight: .heavy)).foregroundStyle(.black)
                     .frame(width: 20, height: 20).background(Circle().fill(.white))
                     .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
             }
@@ -722,10 +764,10 @@ struct NowPlayingView: View {
         case .sleep:
             Menu { SleepTimerMenuItems() } label: { bubble("moon.zzz", on: player.sleepActive) }
         case .airplay:
-            AirPlayButton()
+            AirPlayButton(tint: plainBar ? .white.withAlphaComponent(0.7) : .white)
                 .frame(width: 24, height: 24)
                 .frame(width: Self.barHeight, height: Self.barHeight)
-                .glassEffect(.regular.interactive(), in: .circle)
+                .glassEffect(plainBar ? .identity : .regular.interactive(), in: .circle)
         case .equalizer:
             Button { showEQ = true } label: { bubble("slider.vertical.3", on: eq.enabled && !eq.isFlat) }
                 .buttonStyle(.plain)
@@ -733,11 +775,12 @@ struct NowPlayingView: View {
             if let track = player.current {
                 Button { library.toggleFavorite(track) } label: {
                     Image(systemName: track.isFavorite ? "star.fill" : "star")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.app(size: 17, weight: .semibold))
                         .foregroundStyle(track.isFavorite ? .yellow : .white)
                         .frame(width: Self.barHeight, height: Self.barHeight)
                         .contentTransition(.symbolEffect(.replace))
-                        .glassEffect(.regular.interactive(), in: .circle)
+                        .glassEffect(plainBar ? .identity : .regular.interactive(), in: .circle)
+                        .contentShape(.circle)
                 }
                 .buttonStyle(.plain)
                 .sensoryFeedback(.success, trigger: track.isFavorite)
@@ -751,18 +794,42 @@ struct NowPlayingView: View {
                 }
             }
         case .more:
-            if let track = player.current { moreMenu(track, size: Self.barHeight) }
+            if let track = player.current { moreMenu(track, size: Self.barHeight, glass: !plainBar) }
         }
     }
 
     private static let barHeight: CGFloat = 48
+    private var plainBar: Bool { cfg.barStyle == .plain }
 
-    private func bubble(_ symbol: String, on: Bool) -> some View {
+    @ViewBuilder private func bubble(_ symbol: String, on: Bool) -> some View {
+        if plainBar {
+            // Bare icon; when on, it's cut out of a small white tile so the background shows through.
+            let icon = Image(systemName: symbol).font(.app(size: 20, weight: .medium))
+            icon.foregroundStyle(.white.opacity(0.7))
+                .opacity(on ? 0 : 1)
+                .frame(width: 36, height: 36)
+                .background {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous).fill(.white)
+                        .overlay { icon.blendMode(.destinationOut) }
+                        .compositingGroup()
+                        .opacity(on ? 0.9 : 0)
+                }
+                .frame(width: Self.barHeight, height: Self.barHeight)
+                .contentShape(Rectangle())
+                .animation(.smooth(duration: 0.3), value: on)
+        } else {
+            glassBubble(symbol, on: on)
+        }
+    }
+
+    private func glassBubble(_ symbol: String, on: Bool) -> some View {
         Image(systemName: symbol)
-            .font(.system(size: 17, weight: .semibold))
+            .font(.app(size: 17, weight: .semibold))
             .foregroundStyle(on ? .black : .white)
             .frame(width: Self.barHeight, height: Self.barHeight)
             .glassEffect(on ? .regular.tint(.white.opacity(0.92)).interactive() : .regular.interactive(), in: .circle)
+            // The whole bubble takes the tap, not just the symbol in its middle.
+            .contentShape(.circle)
             .animation(.smooth(duration: 0.3), value: on)
     }
 }
@@ -846,7 +913,7 @@ struct ScrubberSection: View {
                 if showPreset && eq.enabled && !eq.isFlat {
                     Button(action: showEQ) {
                         Label(eq.activeName, systemImage: "slider.vertical.3")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.app(size: 11, weight: .semibold))
                             .foregroundStyle(.white.opacity(0.55))
                     }
                     .buttonStyle(.plain)
@@ -855,12 +922,126 @@ struct ScrubberSection: View {
                 Spacer()
                 Text(formatTime(player.duration)).opacity(showTimes ? 1 : 0)
             }
-            .font(.system(size: 12, weight: .medium))
+            .font(.app(size: 12, weight: .medium))
             .monospacedDigit()
             .foregroundStyle(.white.opacity(0.6))
             .animation(.smooth, value: eq.activeName)
             }
         }
+    }
+}
+
+// MARK: - Volume
+
+/// The phone's volume, drawn like the progress bar. Drives a hidden system volume view, which also keeps the
+/// system volume HUD away while the player is open.
+struct VolumeSlider: View {
+    @State private var volume = SystemVolume()
+    @State private var dragging = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "speaker.fill")
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.white.opacity(0.25))
+                    Capsule().fill(.white).frame(width: max(0, geo.size.width * CGFloat(volume.level)))
+                }
+                .frame(height: dragging ? 12 : 6)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { g in
+                            dragging = true
+                            volume.set(Float(min(1, max(0, g.location.x / geo.size.width))))
+                        }
+                        .onEnded { _ in dragging = false }
+                )
+                .animation(.spring(duration: 0.3, bounce: 0.3), value: dragging)
+            }
+            .frame(height: 22)
+            Image(systemName: "speaker.wave.3.fill")
+        }
+        .font(.app(size: 13))
+        .foregroundStyle(.white.opacity(0.6))
+        .background { SystemVolumeView(volume: volume).frame(width: 1, height: 1).opacity(0.01).allowsHitTesting(false) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Volume")
+        .accessibilityValue("\(Int((volume.level * 100).rounded())) %")
+        .accessibilityAdjustableAction { dir in
+            volume.set(min(1, max(0, volume.level + (dir == .increment ? 0.0625 : -0.0625))))
+        }
+    }
+}
+
+@Observable
+final class SystemVolume {
+    var level: Float = AVAudioSession.sharedInstance().outputVolume
+    @ObservationIgnored weak var slider: UISlider?
+    @ObservationIgnored private var observation: NSKeyValueObservation?
+
+    init() {
+        observation = AVAudioSession.sharedInstance().observe(\.outputVolume) { [weak self] session, _ in
+            let value = session.outputVolume
+            Task { @MainActor in self?.level = value }
+        }
+    }
+
+    func set(_ value: Float) {
+        level = value
+        slider?.value = value
+    }
+}
+
+private struct SystemVolumeView: UIViewRepresentable {
+    let volume: SystemVolume
+    func makeUIView(context: Context) -> MPVolumeView {
+        let v = MPVolumeView()
+        v.showsVolumeSlider = true
+        volume.slider = v.subviews.compactMap { $0 as? UISlider }.first
+        return v
+    }
+    func updateUIView(_ uiView: MPVolumeView, context: Context) {
+        if volume.slider == nil { volume.slider = uiView.subviews.compactMap { $0 as? UISlider }.first }
+    }
+}
+
+// MARK: - Living artwork
+
+/// The cover blown up, blurred and slowly turning in layers, so the player glows in the song's own colours.
+struct LivingArtwork: View {
+    let track: Track
+    var moving: Bool
+
+    var body: some View {
+        GeometryReader { geo in
+            let side = max(geo.size.width, geo.size.height)
+            // Drawn small and scaled up: the blur is the expensive part, and this keeps it cheap at 30 fps.
+            let small = side / 4
+            TimelineView(.animation(minimumInterval: 1 / 30, paused: !moving)) { ctx in
+                let t = ctx.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3600)
+                ZStack {
+                    layer(small * 1.25, angle: t * 4, x: 0, y: 0)
+                    layer(small * 0.9, angle: -t * 6 + 120, x: cos(t * 0.11) * small * 0.28, y: sin(t * 0.09) * small * 0.3)
+                    layer(small * 0.7, angle: t * 8 + 240, x: sin(t * 0.07) * small * 0.3, y: cos(t * 0.13) * small * 0.26)
+                }
+                .frame(width: small, height: small)
+                .saturation(1.5)
+                .blur(radius: small * 0.09)
+                .scaleEffect(4.4)
+                .frame(width: geo.size.width, height: geo.size.height)
+            }
+        }
+        .clipped()
+    }
+
+    private func layer(_ size: CGFloat, angle: Double, x: CGFloat, y: CGFloat) -> some View {
+        ArtworkView(track: track, radius: 0).thumbnail()
+            .aspectRatio(1, contentMode: .fill)
+            .frame(width: size, height: size)
+            .rotationEffect(.degrees(angle))
+            .offset(x: x, y: y)
     }
 }
 
@@ -931,7 +1112,11 @@ struct LyricsView: View {
         if cursorKey == parsedKey { return cursor }
         return LyricsCursor.index(in: lines, at: player.positionSnapshot + shift)
     }
-    private var fontSize: CGFloat { CGFloat(theme.lyricsSize) * (fullScreen ? 1.2 : 1) }
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    /// A step up on iPad, where the lines have a much wider column to fill.
+    private var fontSize: CGFloat { CGFloat(theme.lyricsSize) * (fullScreen ? 1.2 : 1) * (sizeClass == .regular ? 1.3 : 1) }
+    /// Room around the lines for the glow and the blur of the lines away from the one being sung.
+    private static let bleed: CGFloat = 22
 
     var body: some View {
         let current = currentIndex
@@ -941,9 +1126,9 @@ struct LyricsView: View {
                     switch service.state(track.id) {
                     case .running(let phase):
                         ProgressView().controlSize(.large).tint(.white)
-                        Text(phase).font(.system(size: 20, weight: .bold)).contentTransition(.opacity)
+                        Text(phase).font(.app(size: 20, weight: .bold)).contentTransition(.opacity)
                         Text("Language first, then lyrics. All on this device.")
-                            .font(.system(size: 14)).foregroundStyle(.white.opacity(0.6))
+                            .font(.app(size: 14)).foregroundStyle(.white.opacity(0.6))
                     default:
                         if visualizer {
                             LiquidVisualizer(track: track, tint: ArtworkCache.tint(for: track).mix(with: .white, by: 0.25))
@@ -953,8 +1138,8 @@ struct LyricsView: View {
                                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
                         } else {
                             Spacer(minLength: 0)
-                            Image(systemName: "quote.bubble").font(.system(size: 34))
-                            Text("No Lyrics").font(.system(size: 22, weight: .bold))
+                            Image(systemName: "quote.bubble").font(.app(size: 34))
+                            Text("No Lyrics").font(.app(size: 22, weight: .bold))
                             Group {
                                 if case .failed(let message) = service.state(track.id) {
                                     Text(message)
@@ -964,7 +1149,7 @@ struct LyricsView: View {
                                     Text("Let MRSC listen and write them, add your own, or watch the music instead.")
                                 }
                             }
-                            .font(.system(size: 14))
+                            .font(.app(size: 14))
                             .foregroundStyle(.white.opacity(0.65))
                             noLyricsActions(compact: false).padding(.top, 10)
                             Spacer(minLength: 0)
@@ -982,7 +1167,7 @@ struct LyricsView: View {
                         LazyVStack(alignment: theme.lyricsCentered ? .center : .leading, spacing: 24) {
                             if let label = sourceLabel {
                                 Text(label)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(.app(size: 12, weight: .semibold))
                                     .foregroundStyle(.white.opacity(0.55))
                             }
                             ForEach(lines) { line in lineView(line, current: current) }
@@ -990,6 +1175,7 @@ struct LyricsView: View {
                         .multilineTextAlignment(theme.lyricsCentered ? .center : .leading)
                         .padding(.top, 50)
                         .padding(.bottom, 160)
+                        .padding(.horizontal, Self.bleed)
                         .frame(maxWidth: .infinity, alignment: theme.lyricsCentered ? .center : .leading)
                     }
                     // Fixed-height fades: lines melt away under the buttons and above the scrubber instead of
@@ -1001,6 +1187,9 @@ struct LyricsView: View {
                             LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 48)
                         }
                     }
+                    // The scroll view clips its content, so the glow and the blur of a line at the edge were cut off.
+                    // It reaches into the surrounding margin instead, and the lines keep their place via the padding above.
+                    .padding(.horizontal, -Self.bleed)
                     .background {
                         LyricsCursor(lines: lines, key: parsedKey, shift: shift) { idx, key in
                             cursor = idx
@@ -1098,7 +1287,7 @@ struct LyricsView: View {
                 .frame(maxWidth: 340)
             }
         }
-        .font(.system(size: 15, weight: .semibold))
+        .font(.app(size: 15, weight: .semibold))
         .lineLimit(1)
         .minimumScaleFactor(0.85)
         .controlSize(.large)
@@ -1127,12 +1316,12 @@ struct LyricsView: View {
                 }
             } else {
                 Text(line.text)
-                    .font(.system(size: fontSize, weight: .bold))
+                    .font(.app(size: fontSize, weight: .bold))
                     .foregroundStyle(.white.opacity(!timed ? 0.85 : active ? 1 : browsing ? 0.5 : 0.32))
             }
             if settings.translateLyrics, let tr = translations[line.id] {
                 Text(tr)
-                    .font(.system(size: fontSize * 0.55, weight: .semibold))
+                    .font(.app(size: fontSize * 0.55, weight: .semibold))
                     .foregroundStyle(.white.opacity(active || !timed ? 0.7 : 0.25))
                     .transition(.opacity)
             }
@@ -1186,7 +1375,7 @@ struct LyricsView: View {
 
     private func chipLabel(_ symbol: String, on: Bool) -> some View {
         Image(systemName: symbol)
-            .font(.system(size: 13, weight: .semibold))
+            .font(.app(size: 13, weight: .semibold))
             .foregroundStyle(on ? .black : .white)
             .frame(width: 34, height: 34)
             .glassEffect(on ? .regular.tint(.white.opacity(0.9)).interactive() : .regular.interactive(), in: .circle)
@@ -1239,11 +1428,11 @@ struct WordLine: View {
                 let next = i + 1 < words.count ? words[i + 1].time : (end ?? w.time + 0.6)
                 let fill = max(0, min(1, (now - w.time) / max(0.08, next - w.time)))
                 Text(w.text)
-                    .font(.system(size: size, weight: .bold))
+                    .font(.app(size: size, weight: .bold))
                     .foregroundStyle(.white.opacity(0.32))
                     .overlay {
                         Text(w.text)
-                            .font(.system(size: size, weight: .bold))
+                            .font(.app(size: size, weight: .bold))
                             .foregroundStyle(.white)
                             .mask(alignment: .leading) {
                                 GeometryReader { g in Rectangle().frame(width: g.size.width * fill) }
@@ -1317,10 +1506,10 @@ struct LyricsTimingSheet: View {
             Form {
                 Section {
                     VStack(spacing: 10) {
-                        Text(String(format: "%+.1f s", offset)).font(.system(size: 34, weight: .bold)).monospacedDigit()
+                        Text(String(format: "%+.1f s", offset)).font(.app(size: 34, weight: .bold)).monospacedDigit()
                             .contentTransition(.numericText())
                         Text(offset == 0 ? "In sync" : offset > 0 ? "Lyrics appear earlier" : "Lyrics appear later")
-                            .font(.footnote).foregroundStyle(.secondary)
+                            .font(.app(.footnote)).foregroundStyle(.secondary)
                         Slider(value: $offset, in: -5...5, step: 0.1)
                         HStack {
                             ForEach([-0.5, -0.1, 0.1, 0.5], id: \.self) { d in
@@ -1386,9 +1575,9 @@ struct LyricsSyncEditor: View {
                                         else if let t = line.time { Text(formatTime(t)).foregroundStyle(.tertiary) }
                                         else { Text("–").foregroundStyle(.secondary) }
                                     }
-                                    .font(.caption.monospacedDigit())
+                                    .font(.app(.caption).monospacedDigit())
                                     .frame(width: 44, alignment: .leading)
-                                    Text(line.text).font(.system(size: 17, weight: i == next ? .bold : .regular))
+                                    Text(line.text).font(.app(size: 17, weight: i == next ? .bold : .regular))
                                         .foregroundStyle(i < next ? .secondary : .primary)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
@@ -1404,7 +1593,7 @@ struct LyricsSyncEditor: View {
                 }
                 VStack(spacing: 12) {
                     PlaybackTimeLabel()
-                    Text("Tap a line to sync again from there.").font(.footnote).foregroundStyle(.secondary)
+                    Text("Tap a line to sync again from there.").font(.app(.footnote)).foregroundStyle(.secondary)
                     HStack(spacing: 12) {
                         Button { restart() } label: {
                             Image(systemName: "backward.end.fill").frame(width: 50, height: 50)
@@ -1424,7 +1613,7 @@ struct LyricsSyncEditor: View {
                         .disabled(next >= lines.count)
                         .sensoryFeedback(.impact(weight: .medium), trigger: next)
                     }
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.app(size: 17, weight: .semibold))
                 }
                 .padding(16)
             }
@@ -1494,7 +1683,7 @@ struct LyricsSyncEditor: View {
 /// The playback time on its own, so the 50 ms tick redraws only this label.
 private struct PlaybackTimeLabel: View {
     @Environment(PlayerModel.self) private var player
-    var body: some View { Text(formatTime(player.position)).font(.title3.monospacedDigit().bold()) }
+    var body: some View { Text(formatTime(player.position)).font(.app(.title3).monospacedDigit().bold()) }
 }
 
 /// Lyrics filling the screen, with minimal controls.
@@ -1521,12 +1710,12 @@ struct FullScreenLyricsView: View {
                     HStack {
                         ArtworkView(track: t, radius: 8).thumbnail().frame(width: 44, height: 44)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(t.title).font(.headline).lineLimit(1)
-                            Text(t.artist).font(.subheadline).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                            Text(t.title).font(.app(.headline)).lineLimit(1)
+                            Text(t.artistCredit).font(.app(.subheadline)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
                         }
                         Spacer()
                         Button { dismiss() } label: {
-                            Image(systemName: "arrow.down.right.and.arrow.up.left").font(.system(size: 15, weight: .semibold))
+                            Image(systemName: "arrow.down.right.and.arrow.up.left").font(.app(size: 15, weight: .semibold))
                                 .frame(width: 42, height: 42).glassEffect(.regular.interactive(), in: .circle)
                         }
                         .buttonStyle(.plain)
@@ -1534,13 +1723,13 @@ struct FullScreenLyricsView: View {
                     LyricsView(track: t, edit: { editing = true }, fullScreen: true)
                         .frame(maxHeight: .infinity)
                     HStack(spacing: 44) {
-                        Button { player.previous() } label: { Image(systemName: "backward.fill").font(.system(size: 26)) }
+                        SkipButton(direction: .backward, size: 26, box: CGSize(width: 36, height: 44)) { player.previous() }
                         Button { player.togglePlay() } label: {
-                            Image(systemName: player.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 30))
+                            Image(systemName: player.isPlaying ? "pause.fill" : "play.fill").font(.app(size: 30))
                                 .contentTransition(.symbolEffect(.replace))
                                 .frame(width: 64, height: 64).glassEffect(.regular.interactive(), in: .circle)
                         }
-                        Button { player.next() } label: { Image(systemName: "forward.fill").font(.system(size: 26)) }
+                        SkipButton(direction: .forward, size: 26, box: CGSize(width: 36, height: 44)) { player.next() }
                     }
                     .buttonStyle(.plain)
                     .padding(.bottom, 8)
@@ -1566,7 +1755,7 @@ struct LyricsEditor: View {
     var body: some View {
         NavigationStack {
             TextEditor(text: $text)
-                .font(.system(size: 16, design: .monospaced))
+                .font(.app(size: 16, design: .monospaced))
                 .padding(.horizontal, 12)
                 .navigationTitle("Lyrics")
                 .navigationBarTitleDisplayMode(.inline)
@@ -1614,7 +1803,7 @@ struct QueueView: View {
                 HStack {
                     Button("Cancel") { withAnimation { selecting = false; selection.removeAll() } }
                     Spacer()
-                    Text(selection.isEmpty ? "Select Songs" : "\(selection.count) Selected").font(.footnote)
+                    Text(selection.isEmpty ? "Select Songs" : "\(selection.count) Selected").font(.app(.footnote))
                     Spacer()
                     Button("Remove", role: .destructive) {
                         player.removeItems(selection)
@@ -1622,7 +1811,7 @@ struct QueueView: View {
                     }
                     .disabled(selection.isEmpty)
                 }
-                .font(.system(size: 15, weight: .semibold))
+                .font(.app(size: 15, weight: .semibold))
                 .padding(.horizontal, 18).frame(height: 48)
                 .glassEffect(.regular, in: Capsule())
                 .padding(.bottom, 6)
@@ -1650,16 +1839,16 @@ struct QueueView: View {
                 HStack {
                     Button { withAnimation(.smooth) { showHistory.toggle() } } label: {
                         HStack(spacing: 6) {
-                            Text("History").font(.system(size: 15, weight: .bold))
-                            Text("\(player.history.count)").font(.system(size: 13)).foregroundStyle(.white.opacity(0.5))
-                            Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold)).rotationEffect(.degrees(showHistory ? 0 : -90))
+                            Text("History").font(.app(size: 15, weight: .bold))
+                            Text("\(player.history.count)").font(.app(size: 13)).foregroundStyle(.white.opacity(0.5))
+                            Image(systemName: "chevron.down").font(.app(size: 11, weight: .bold)).rotationEffect(.degrees(showHistory ? 0 : -90))
                         }
                         .foregroundStyle(.white)
                     }
                     .buttonStyle(.plain)
                     Spacer()
                     if showHistory {
-                        Button("Clear") { player.clearHistory() }.font(.system(size: 13, weight: .semibold)).foregroundStyle(.white.opacity(0.7)).buttonStyle(.plain)
+                        Button("Clear") { player.clearHistory() }.font(.app(size: 13, weight: .semibold)).foregroundStyle(.white.opacity(0.7)).buttonStyle(.plain)
                     }
                 }
                 .textCase(nil)
@@ -1691,9 +1880,9 @@ struct QueueView: View {
         } header: {
             HStack {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Continue Playing").font(.system(size: 17, weight: .bold)).foregroundStyle(.white)
+                    Text("Continue Playing").font(.app(size: 17, weight: .bold)).foregroundStyle(.white)
                     if !player.queueTitle.isEmpty {
-                        Text("From \(player.queueTitle)").font(.system(size: 13)).foregroundStyle(.white.opacity(0.6))
+                        Text("From \(player.queueTitle)").font(.app(size: 13)).foregroundStyle(.white.opacity(0.6))
                     }
                 }
                 Spacer()
@@ -1719,7 +1908,7 @@ struct QueueView: View {
                     Divider()
                     Button(role: .destructive) { player.clearUpcoming() } label: { Label("Clear Queue", systemImage: "trash") }
                 } label: {
-                    Image(systemName: "ellipsis").font(.system(size: 13, weight: .semibold)).frame(width: 32, height: 32).background(Color.white.opacity(0.14), in: Circle())
+                    Image(systemName: "ellipsis").font(.app(size: 13, weight: .semibold)).frame(width: 32, height: 32).background(Color.white.opacity(0.14), in: Circle())
                 }
             }
             .textCase(nil)
@@ -1730,7 +1919,7 @@ struct QueueView: View {
     private func toggle(_ symbol: String, on: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.app(size: 13, weight: .semibold))
                 .foregroundStyle(on ? .black : .white.opacity(0.85))
                 .frame(width: 32, height: 32)
                 .background(on ? Color.white.opacity(0.92) : Color.white.opacity(0.14), in: Circle())
@@ -1753,25 +1942,49 @@ struct QueueView: View {
                     }
                 }
             VStack(alignment: .leading, spacing: 1) {
-                Text(t.title).font(.system(size: compact ? 14 : 15, weight: .medium)).lineLimit(1)
+                Text(t.title).font(.app(size: compact ? 14 : 15, weight: .medium)).lineLimit(1)
                 if !compact || playing {
-                    Text("\(t.artist) • \(formatTime(t.duration))").font(.system(size: 12)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                    Text("\(t.artistCredit) • \(formatTime(t.duration))").font(.app(size: 12)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
                 }
             }
             Spacer()
             if t.isRemote && !MediaLocator.isPlayableNow(t) {
-                Image(systemName: "cloud").font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
+                Image(systemName: "cloud").font(.app(size: 11)).foregroundStyle(.white.opacity(0.45))
             }
         }
         .contentShape(Rectangle())
     }
 }
 
+/// On a song change the cover dips back a little and springs forward again, like the mini player's glass does.
+/// Sits outside the cover's `.id(track.id)` so it survives the swap and animates across it.
+private struct SkipPulse: ViewModifier {
+    let trigger: Track.ID
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.keyframeAnimator(initialValue: 1.0, trigger: trigger) { view, scale in
+                view.scaleEffect(scale)
+            } keyframes: { _ in
+                SpringKeyframe(0.9, duration: 0.18, spring: .smooth(duration: 0.18))
+                SpringKeyframe(1.0, duration: 0.5, spring: .bouncy(duration: 0.5, extraBounce: 0.1))
+            }
+        } else {
+            content
+        }
+    }
+}
+
+private extension View {
+    func skipPulse(trigger: Track.ID, enabled: Bool) -> some View { modifier(SkipPulse(trigger: trigger, enabled: enabled)) }
+}
+
 struct BufferingBadge: View {
     var body: some View {
         HStack(spacing: 8) {
             ProgressView().tint(.white)
-            Text("Loading from server…").font(.system(size: 13, weight: .semibold))
+            Text("Loading from server…").font(.app(size: 13, weight: .semibold))
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 14).padding(.vertical, 8)

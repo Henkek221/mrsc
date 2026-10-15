@@ -56,6 +56,9 @@ nonisolated struct Track: Identifiable, Codable, Hashable, Sendable {
     var sourceKey: String?
 
     // Extended tags
+    /// Everyone credited on the song, main artist first, when there is more than one (multi-value tags,
+    /// a server's artist list). `artist` stays the main artist, so artists and albums still group by it.
+    var artists: [String]?
     var albumArtist: String?
     var genre: String?
     var year: Int?
@@ -118,6 +121,67 @@ extension Track {
     nonisolated var isOffline: Bool { !path.isEmpty }
     /// Where this song comes from, for grouping in the unified library.
     nonisolated var origin: TrackOrigin { !isRemote ? .local : isDownloaded ? .downloaded : .streaming }
+
+    /// The credit list, if it still belongs to `artist` (renaming the artist by hand drops the old list).
+    nonisolated private var creditList: [String]? {
+        guard let list = artists, list.count > 1, ArtistCredit.names(artist, first: list[0]) else { return nil }
+        return list
+    }
+    /// The full credit to show: "A & B", "A, B & C", or the artist tag as written ("A feat. B").
+    nonisolated var artistCredit: String {
+        guard let list = creditList, ArtistCredit.same(list[0], artist) else { return artist }
+        return ArtistCredit.join(list)
+    }
+    /// Each credited artist on their own, main artist first, for "Go to Artist" and artist pages.
+    nonisolated var creditedArtists: [String] { creditList ?? ArtistCredit.split(artist) }
+    /// The song is by `name` or features them.
+    nonisolated func credits(_ name: String) -> Bool {
+        ArtistCredit.contains(artist, name) || (creditList?.contains { ArtistCredit.same($0, name) } ?? false)
+    }
+}
+
+/// Multiple-artist credits: joining a list for display and finding the names in a written credit.
+nonisolated enum ArtistCredit {
+    /// "A & B", "A, B & C".
+    static func join(_ names: [String]) -> String {
+        guard names.count > 1 else { return names.first ?? "" }
+        return names.dropLast().joined(separator: ", ") + " & " + names[names.count - 1]
+    }
+
+    /// "A feat. B" → ["A", "B"]. Only unambiguous separators, so "Simon & Garfunkel" or "Tyler, The Creator" stay whole.
+    static func split(_ credit: String) -> [String] {
+        let parts = credit.replacingOccurrences(of: #"(?i)\s+(?:feat\.?|ft\.|featuring)\s+|\s*;\s*|\s+•\s+"#, with: "\u{0}", options: .regularExpression)
+            .split(separator: "\u{0}").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return parts.isEmpty ? [credit] : unique(parts)
+    }
+
+    /// Distinct names in order, ignoring case and accents.
+    static func unique(_ names: [String]) -> [String] {
+        var seen = Set<String>()
+        return names.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert(key($0)).inserted }
+    }
+
+    static func same(_ a: String, _ b: String) -> Bool { key(a) == key(b) }
+
+    /// `credit` is `name` or names them (as in ArtistCatalog.matches: "A feat. B", "A, B", "A; B").
+    static func contains(_ credit: String, _ name: String) -> Bool {
+        let wanted = key(name)
+        guard !wanted.isEmpty else { return false }
+        if key(credit) == wanted { return true }
+        return credit.replacingOccurrences(of: #"(?i)\s+(?:feat\.?|ft\.?|featuring)\s+|[,;]|\s+•\s+"#, with: ";", options: .regularExpression)
+            .split(separator: ";").contains { key(String($0)) == wanted }
+    }
+
+    /// `credit` starts with `name` ("A/B" for "A") or names them.
+    static func names(_ credit: String, first name: String) -> Bool {
+        key(credit).hasPrefix(key(name)) || contains(credit, name)
+    }
+
+    private static func key(_ s: String) -> String {
+        s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
 }
 
 nonisolated enum TrackOrigin: String, CaseIterable, Identifiable, Sendable {

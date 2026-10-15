@@ -26,7 +26,7 @@ struct TourDeck: View {
                 HStack {
                     Spacer()
                     Button("Skip") { onFinish() }
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.app(size: 15, weight: .medium))
                         .foregroundStyle(current.tone.colored ? .white.opacity(0.8) : Site.ink2)
                         .opacity(isLast ? 0 : 1)
                 }
@@ -100,7 +100,7 @@ private struct TourPageView: View {
                     VStack(spacing: 16) {
                         headline
                         Text(page.text)
-                            .font(.system(size: 17, weight: page.tone.colored ? .semibold : .medium))
+                            .font(.app(size: 17, weight: page.tone.colored ? .semibold : .medium))
                             .tracking(-0.27)
                             .foregroundStyle(page.tone.lede)
                             .textRenderer(BlurReveal(progress: shown ? 1 : 0))
@@ -197,7 +197,7 @@ private struct ThemeCrate: View {
             .frame(height: 270)
 
             Text(list[selected].name)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.app(size: 17, weight: .semibold))
                 .foregroundStyle(Site.ink2)
                 .contentTransition(.opacity)
         }
@@ -233,12 +233,12 @@ private struct ColoredVinyl: View {
                     .overlay {
                         VStack(spacing: s * 0.035) {
                             Text(name.uppercased())
-                                .font(.system(size: s * 0.045, weight: .heavy))
+                                .font(.app(size: s * 0.045, weight: .heavy))
                                 .tracking(s * 0.004)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.6)
                             Circle().fill(color).frame(width: s * 0.03)
-                            Text("MRSC").font(.system(size: s * 0.03, weight: .semibold)).opacity(0.5)
+                            Text("MRSC").font(.app(size: s * 0.03, weight: .semibold)).opacity(0.5)
                         }
                         .foregroundStyle(.black.opacity(0.8))
                         .frame(width: s * 0.28)
@@ -305,7 +305,7 @@ private struct LyricsLines: View {
             text += a
         }
         return Text(text)
-            .font(.system(size: 31, weight: .heavy))
+            .font(.app(size: 31, weight: .heavy))
             .tracking(-1.1)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -339,10 +339,10 @@ private struct SearchPill: View {
         VStack(spacing: 30) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.app(size: 17, weight: .bold))
                     .foregroundStyle(Theme.accent)
                 Text(typed)
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.app(size: 18, weight: .medium))
                     .foregroundStyle(onColor ? Color.black : Color.primary)
                     .lineLimit(1)
                 TimelineView(.periodic(from: .now, by: 0.5)) { ctx in
@@ -409,7 +409,7 @@ private struct DymoTape: View {
 
     var body: some View {
         Text(text.uppercased())
-            .font(.system(size: 14, weight: .heavy))
+            .font(.app(size: 14, weight: .heavy))
             .tracking(14 * 0.14)
             .foregroundStyle(ink)
             .shadow(color: .black.opacity(0.7), radius: 0, x: 0, y: -1)
@@ -524,12 +524,12 @@ private struct LeftOutPage: View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
             Text("Things we left out")
-                .font(.system(size: 17, weight: .semibold))
+                .font(.app(size: 17, weight: .semibold))
                 .opacity(0.85)
                 .padding(.bottom, 24)
             ForEach(Self.lines.indices, id: \.self) { i in
                 Text(Self.lines[i])
-                    .font(.system(size: 44, weight: .black))
+                    .font(.app(size: 44, weight: .black))
                     .tracking(-2)
                     .opacity(i < lit ? 1 : 0.28)
                     .padding(.top, i == Self.lines.count - 1 ? 22 : 0)

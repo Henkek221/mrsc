@@ -78,7 +78,9 @@ private nonisolated struct StoredQueue: Codable {
 final class PlayerModel {
     // MARK: Observable state
     private(set) var queue: [QueueItem] = [] { didSet { scheduleQueueSave() } }
-    private(set) var currentIndex = 0 { didSet { if currentIndex != oldValue { scheduleQueueSave() } } }
+    private(set) var currentIndex = 0 { didSet { if currentIndex != oldValue { scheduleQueueSave(); steppedBack = false } } }
+    /// The last song change went backwards (Previous, or jumping up the queue), so titles can slide the right way.
+    @ObservationIgnored private(set) var steppedBack = false
     private(set) var isPlaying = false {
         didSet {
             if isPlaying && !oldValue { startTick() }
@@ -356,6 +358,7 @@ final class PlayerModel {
     func previous(always: Bool = false) {
         if !always && position > 3 || currentIndex == 0 && repeatMode != .all { seek(to: 0); return }
         currentIndex = currentIndex == 0 ? queue.count - 1 : currentIndex - 1
+        steppedBack = true
         loadCurrent(autoplay: true)
     }
 
@@ -388,7 +391,9 @@ final class PlayerModel {
 
     func jump(toQueueIndex i: Int) {
         guard queue.indices.contains(i) else { return }
+        let back = i < currentIndex
         currentIndex = i
+        steppedBack = back
         loadCurrent(autoplay: true)
     }
 
@@ -1186,7 +1191,7 @@ final class PlayerModel {
         }
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: t.title,
-            MPMediaItemPropertyArtist: t.artist,
+            MPMediaItemPropertyArtist: t.artistCredit,
             MPMediaItemPropertyAlbumTitle: t.album,
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: position,

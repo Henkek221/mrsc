@@ -11,6 +11,8 @@ nonisolated struct ModuleTrack: Sendable, Hashable, Identifiable {
     var trackID: String
     var title: String
     var artist: String
+    /// Everyone credited, main artist first, when the extension lists more than one.
+    var artists: [String]? = nil
     var album: String
     var duration: Double
     var cover: String?
@@ -19,6 +21,8 @@ nonisolated struct ModuleTrack: Sendable, Hashable, Identifiable {
     var trackNumber: Int = 0
     var year: Int? = nil
     var id: String { "\(moduleID):\(trackID)" }
+    /// "A & B" when the extension credits several artists.
+    var artistCredit: String { artists.map(ArtistCredit.join) ?? artist }
 
     /// Refresh source metadata without replacing the saved song's identity, download or user edits.
     func enriching(_ saved: Track) -> Track {
@@ -30,6 +34,7 @@ nonisolated struct ModuleTrack: Sendable, Hashable, Identifiable {
             if track.albumArtist?.isEmpty != false { track.albumArtist = albumArtist }
             if track.trackNumber == 0 { track.trackNumber = trackNumber }
             if track.year == nil { track.year = year }
+            if track.artists == nil, ArtistCredit.same(track.artist, artist) { track.artists = artists }
         }
         return track
     }
@@ -40,6 +45,7 @@ nonisolated struct ModuleTrack: Sendable, Hashable, Identifiable {
         let uuid = UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
                                bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
         var track = Track(id: uuid, title: title, artist: artist, album: album, duration: duration, path: "")
+        track.artists = artists
         track.sourceID = "module:\(moduleID)"
         track.remoteID = trackID
         track.albumArtist = albumArtist
@@ -381,7 +387,8 @@ final class ModuleStore {
         try Task.checkCancellation()
         var seen = Set<String>()
         func relevant(_ tracks: [ModuleTrack]) -> [ModuleTrack] {
-            tracks.filter { (ArtistCatalog.matches($0.artist, name: name) || ArtistCatalog.matches($0.albumArtist ?? "", name: name))
+            tracks.filter { (ArtistCatalog.matches($0.artist, name: name) || ArtistCatalog.matches($0.albumArtist ?? "", name: name)
+                             || ($0.artists?.contains { ArtistCredit.same($0, name) } ?? false))
                 && seen.insert($0.id).inserted }
         }
         var list = relevant(found)
@@ -446,6 +453,8 @@ final class ModuleStore {
             if let a = v as? [Any], let f = a.first { return str(f) }
             return nil
         }
+        /// An artist list (`["A", "B"]` or `[{"name": "A"}, …]`); a plain string is a single credit.
+        func names(_ v: Any?) -> [String] { ArtistCredit.unique((v as? [Any])?.compactMap(str) ?? []) }
         return list.compactMap { t in
             guard let id = str(t["id"] ?? t["trackId"]), let title = str(t["title"] ?? t["name"]) else { return nil }
             var duration = (t["duration"] as? NSNumber)?.doubleValue ?? Double(str(t["duration"]) ?? "") ?? 0
@@ -457,7 +466,10 @@ final class ModuleStore {
                              "cover_xl", "cover_big", "cover_medium", "artworkUrl100"]
             let cover = coverKeys.compactMap { imageURL(t[$0]) }.first
                 ?? albumObject.flatMap { album in coverKeys.compactMap { imageURL(album[$0]) }.first }
-            return ModuleTrack(moduleID: moduleID, trackID: id, title: title, artist: str(t["artist"] ?? t["artists"]) ?? "Unknown Artist",
+            let credited = names(t["artists"]).count > 1 ? names(t["artists"]) : names(t["artist"])
+            return ModuleTrack(moduleID: moduleID, trackID: id, title: title,
+                               artist: credited.count > 1 ? credited[0] : str(t["artist"] ?? t["artists"]) ?? "Unknown Artist",
+                               artists: credited.count > 1 ? credited : nil,
                                album: str(album) ?? "Unknown Album", duration: duration, cover: cover,
                                albumArtist: str(t["albumArtist"] ?? albumObject?["artist"]),
                                albumID: str(t["albumId"] ?? t["albumID"] ?? t["album_id"] ?? albumObject?["id"]),

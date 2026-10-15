@@ -108,8 +108,7 @@ struct ArtworkView: View {
     }
 
     @ViewBuilder private var content: some View {
-        if mosaic, tracks.count > 1 {
-            let cells = (0..<4).map { tracks[$0 % tracks.count] }
+        if mosaic, let cells = mosaicCells {
             VStack(spacing: 0) {
                 HStack(spacing: 0) { cell(cells[0]); cell(cells[1]) }
                 HStack(spacing: 0) { cell(cells[2]); cell(cells[3]) }
@@ -122,6 +121,17 @@ struct ArtworkView: View {
         } else {
             placeholder(seed: seed, symbol: symbol)
         }
+    }
+
+    /// Four songs from four different albums, or nil when there aren't four — then one cover beats the same cover four times.
+    private var mosaicCells: [Track]? {
+        var seen = Set<String>()
+        var cells: [Track] = []
+        for track in tracks where seen.insert(track.album + track.artist).inserted {
+            cells.append(track)
+            if cells.count == 4 { return cells }
+        }
+        return nil
     }
 
     /// A missing file for the first song must not hide a usable cover from another song on the album.

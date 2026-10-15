@@ -171,8 +171,8 @@ struct QueueRulesView: View {
                         HStack(spacing: 12) {
                             GradientIcon(symbol: "wand.and.rays", colors: [.teal, .blue], size: 32)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Whenever \(rule.trigger.title.lowercased())").font(.subheadline.weight(.semibold))
-                                Text(summary(rule)).font(.caption).foregroundStyle(.secondary)
+                                Text("Whenever \(rule.trigger.title.lowercased())").font(.app(.subheadline).weight(.semibold))
+                                Text(summary(rule)).font(.app(.caption)).foregroundStyle(.secondary)
                             }
                             Spacer()
                             Toggle("", isOn: $rule.enabled).labelsHidden()

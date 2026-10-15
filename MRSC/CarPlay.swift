@@ -86,7 +86,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
     private func trackItems(_ tracks: [Track], title: String) -> [CPListItem] {
         tracks.prefix(CPListTemplate.maximumItemCount).enumerated().map { i, t in
-            let item = CPListItem(text: t.title, detailText: t.artist, image: ArtworkCache.image(for: t, maxPixel: 180))
+            let item = CPListItem(text: t.title, detailText: t.artistCredit, image: ArtworkCache.image(for: t, maxPixel: 180))
             item.handler = { [weak self] _, done in
                 self?.player?.play(tracks, startAt: i, title: title)
                 self?.showNowPlaying()

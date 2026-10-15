@@ -68,7 +68,7 @@ struct AddModuleSheet: View {
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .font(.system(size: 15, design: looksLikeLink || input.isEmpty ? .default : .monospaced))
+                        .font(.app(size: 15, design: looksLikeLink || input.isEmpty ? .default : .monospaced))
                     HStack {
                         PasteButton(payloadType: String.self) { items in
                             guard let s = items.first else { return }
@@ -104,7 +104,7 @@ struct AddModuleSheet: View {
 
                 Section {
                     Text("Only add extensions from developers you trust. An extension can connect to any server.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .font(.app(.footnote)).foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Add Extension")
@@ -179,15 +179,15 @@ struct ModuleRow: View {
             GradientIcon(symbol: "puzzlepiece.extension.fill", colors: [.orange, .pink], size: 34)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(module.name).font(.headline)
-                    if !module.version.isEmpty { Text(module.version).font(.caption).foregroundStyle(.secondary) }
+                    Text(module.name).font(.app(.headline))
+                    if !module.version.isEmpty { Text(module.version).font(.app(.caption)).foregroundStyle(.secondary) }
                 }
                 if !module.labels.isEmpty {
-                    Text(module.labels.prefix(4).joined(separator: " · ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(module.labels.prefix(4).joined(separator: " · ")).font(.app(.caption)).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer()
-            if !module.enabled { Text("Off").font(.caption).foregroundStyle(.secondary) }
+            if !module.enabled { Text("Off").font(.app(.caption)).foregroundStyle(.secondary) }
         }
         .opacity(module.enabled ? 1 : 0.55)
     }
@@ -212,10 +212,10 @@ struct ModuleDetailView: View {
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(m.name).font(.title3.bold())
+                        Text(m.name).font(.app(.title3).bold())
                         Text([m.version.isEmpty ? nil : "Version \(m.version)", m.author.map { "by \($0)" }].compactMap { $0 }.joined(separator: " · "))
-                            .font(.caption).foregroundStyle(.secondary)
-                        if let d = m.detail { Text(d).font(.subheadline).foregroundStyle(.secondary) }
+                            .font(.app(.caption)).foregroundStyle(.secondary)
+                        if let d = m.detail { Text(d).font(.app(.subheadline)).foregroundStyle(.secondary) }
                     }
                     .padding(.vertical, 4)
                     Toggle("Enabled", isOn: Binding(get: { m.enabled }, set: { store.setEnabled(m.id, $0) }))
@@ -238,7 +238,7 @@ struct ModuleDetailView: View {
                                 Button("Search") { Task { await search(m) } }.disabled(query.isEmpty)
                             }
                         }
-                        if let error { Text(error).font(.caption).foregroundStyle(.red) }
+                        if let error { Text(error).font(.app(.caption)).foregroundStyle(.red) }
                         ForEach(results) { r in ModuleResultRow(track: r) }
                     } header: { Text("Test") }
                 }
@@ -246,10 +246,10 @@ struct ModuleDetailView: View {
                 Section {
                     if store.logs.isEmpty { Text("No messages yet.").foregroundStyle(.secondary) }
                     ForEach(Array(store.logs.suffix(40).reversed().enumerated()), id: \.offset) { _, line in
-                        Text(line).font(.system(size: 11, design: .monospaced)).foregroundStyle(line.contains("ERROR") ? .red : .secondary)
+                        Text(line).font(.app(size: 11, design: .monospaced)).foregroundStyle(line.contains("ERROR") ? .red : .secondary)
                     }
                 } header: {
-                    HStack { Text("Log"); Spacer(); Button("Clear") { store.clearLogs() }.font(.caption) }
+                    HStack { Text("Log"); Spacer(); Button("Clear") { store.clearLogs() }.font(.app(.caption)) }
                 }
 
                 Section {
@@ -291,7 +291,7 @@ struct ModuleDetailView: View {
                     ForEach(s.options, id: \.value) { Text($0.label).tag($0.value) }
                 }
             }
-            if let d = s.detail { Text(d).font(.caption).foregroundStyle(.secondary) }
+            if let d = s.detail { Text(d).font(.app(.caption)).foregroundStyle(.secondary) }
         }
     }
 
@@ -318,16 +318,16 @@ struct ModuleRepoView: View {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 6) {
-                            Text(e.name).font(.headline)
-                            Text(e.version).font(.caption).foregroundStyle(.secondary)
+                            Text(e.name).font(.app(.headline))
+                            Text(e.version).font(.app(.caption)).foregroundStyle(.secondary)
                         }
-                        if let d = e.description { Text(d.capitalized(with: nil)).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
-                        if !e.tags.isEmpty { Text(e.tags.joined(separator: " · ")).font(.caption2).foregroundStyle(.tertiary) }
+                        if let d = e.description { Text(d.capitalized(with: nil)).font(.app(.caption)).foregroundStyle(.secondary).lineLimit(3) }
+                        if !e.tags.isEmpty { Text(e.tags.joined(separator: " · ")).font(.app(.caption2)).foregroundStyle(.tertiary) }
                     }
                     Spacer()
                     if busy == e.id { ProgressView() } else if e.locked == true {
                         Label("Not supported", systemImage: "lock.fill")
-                            .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            .font(.app(.caption).weight(.semibold)).foregroundStyle(.secondary)
                     } else {
                         let installed = store.module(e.id) != nil
                         Button(installed ? "Update" : "Install") { Task { await install(e) } }
@@ -340,7 +340,7 @@ struct ModuleRepoView: View {
             if let r = repo, !r.entries.isEmpty, r.entries.allSatisfy({ $0.locked == true }) {
                 VStack { Spacer()
                     Text("The extensions here are in a locked format that MRSC can't run.")
-                        .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(24)
+                        .font(.app(.footnote)).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(24)
                 }
             }
         }
@@ -388,8 +388,8 @@ struct ModuleResultRow: View {
                     .frame(width: 48, height: 48)
                     .clipShape(RoundedRectangle(cornerRadius: 8 * ThemeStore.shared.current.cornerScale, style: .continuous))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(track.title).font(.system(size: 16, weight: .medium)).lineLimit(1).foregroundStyle(.primary)
-                        Text(subtitle ?? (track.artist + (track.duration > 0 ? " • \(formatTime(track.duration))" : ""))).font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
+                        Text(track.title).font(.app(size: 16, weight: .medium)).lineLimit(1).foregroundStyle(.primary)
+                        Text(subtitle ?? (track.artistCredit + (track.duration > 0 ? " • \(formatTime(track.duration))" : ""))).font(.app(size: 13)).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer(minLength: 0)
                 }
@@ -442,8 +442,6 @@ struct ModuleResultRow: View {
 
 /// Extension results in Search. The search itself runs in SearchView so it starts even before there are results.
 struct ModuleSearchSection: View {
-    @Environment(LibraryStore.self) private var library
-    @Environment(DownloadManager.self) private var downloads
     let results: [(InstalledModule, [ModuleTrack])]
     let loading: Bool
 
@@ -455,15 +453,37 @@ struct ModuleSearchSection: View {
             Section {
                 ForEach(tracks) { t in ModuleResultRow(track: t, others: tracks) }
             } header: {
-                HStack {
-                    Label("From \(m.name)", systemImage: "puzzlepiece.extension")
-                    Spacer()
-                    if m.canStream {
-                        Button("Download All") { downloads.download(tracks.map { library.addModuleTrack($0, keep: true) }) }
-                            .font(.system(size: 13, weight: .semibold))
-                    }
-                }
-                .textCase(nil)
+                ModuleSearchHeader(module: m, tracks: tracks)
+            }
+        }
+    }
+}
+
+/// "From <extension>" with Select (pick several to download) and Download All.
+private struct ModuleSearchHeader: View {
+    @Environment(LibraryStore.self) private var library
+    @Environment(DownloadManager.self) private var downloads
+    let module: InstalledModule
+    let tracks: [ModuleTrack]
+    @State private var selecting = false
+
+    var body: some View {
+        HStack {
+            Label("From \(module.name)", systemImage: "puzzlepiece.extension")
+            Spacer()
+            if module.canStream {
+                Button("Select") { selecting = true }
+                    .font(.app(size: 13, weight: .semibold))
+                    .padding(.trailing, 8)
+                Button("Download All") { downloads.download(tracks.map { library.addModuleTrack($0, keep: true) }) }
+                    .font(.app(size: 13, weight: .semibold))
+            }
+        }
+        .textCase(nil)
+        .sheet(isPresented: $selecting) {
+            TrackSelectionSheet(title: module.name, tracks: tracks.map { $0.enriching(library.moduleTrack($0) ?? $0.previewTrack) }) { picked in
+                let byTrackID = Dictionary(tracks.map { ($0.trackID, $0) }, uniquingKeysWith: { a, _ in a })
+                return library.addModuleTracks(picked.compactMap { $0.remoteID.flatMap { byTrackID[$0] } })
             }
         }
     }
@@ -500,12 +520,12 @@ struct ModuleInstallSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 18) {
-                Image(systemName: "puzzlepiece.extension.fill").font(.system(size: 44)).foregroundStyle(Theme.accent)
-                Text("Add Extension?").font(.title2.bold())
-                Text(prompt.url.absoluteString).font(.footnote.monospaced()).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                Image(systemName: "puzzlepiece.extension.fill").font(.app(size: 44)).foregroundStyle(Theme.accent)
+                Text("Add Extension?").font(.app(.title2).bold())
+                Text(prompt.url.absoluteString).font(.app(.footnote).monospaced()).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 Text("Only add extensions from developers you trust. An extension can connect to any server.")
-                    .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                if let result { Text(result).font(.subheadline.weight(.semibold)).multilineTextAlignment(.center) }
+                    .font(.app(.subheadline)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                if let result { Text(result).font(.app(.subheadline).weight(.semibold)).multilineTextAlignment(.center) }
                 Spacer()
                 if result == nil {
                     Button {

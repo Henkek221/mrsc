@@ -247,9 +247,9 @@ struct AudioLabSections: View {
                 Toggle(isOn: $lab.compressor.animation()) { Label("Compressor", systemImage: "arrow.down.right.and.arrow.up.left") }
                 if lab.compressor {
                     HStack {
-                        Text("Gentle").font(.footnote).foregroundStyle(.secondary)
+                        Text("Gentle").font(.app(.footnote)).foregroundStyle(.secondary)
                         Slider(value: $lab.compression, in: 0...1)
-                        Text("Strong").font(.footnote).foregroundStyle(.secondary)
+                        Text("Strong").font(.app(.footnote)).foregroundStyle(.secondary)
                     }
                 }
             } header: { Text("Loudness & Dynamics") } footer: {
@@ -265,9 +265,9 @@ struct AudioLabSections: View {
                         Text(balanceText).foregroundStyle(.secondary).monospacedDigit()
                     }
                     HStack {
-                        Text("L").font(.footnote.bold()).foregroundStyle(.secondary)
+                        Text("L").font(.app(.footnote).bold()).foregroundStyle(.secondary)
                         Slider(value: $lab.balance, in: -1...1)
-                        Text("R").font(.footnote.bold()).foregroundStyle(.secondary)
+                        Text("R").font(.app(.footnote).bold()).foregroundStyle(.secondary)
                     }
                     .onTapGesture(count: 2) { lab.balance = 0 }
                 }
@@ -309,7 +309,7 @@ struct AudioLabSections: View {
                         Image(systemName: p.id == lab.routeID ? "checkmark.circle.fill" : "headphones").foregroundStyle(p.id == lab.routeID ? Theme.accent : .secondary)
                         VStack(alignment: .leading) {
                             Text(p.name)
-                            Text(profileSummary(p)).font(.caption).foregroundStyle(.secondary)
+                            Text(profileSummary(p)).font(.app(.caption)).foregroundStyle(.secondary)
                         }
                     }
                     .swipeActions { Button("Delete", role: .destructive) { lab.removeProfile(p.id) } }

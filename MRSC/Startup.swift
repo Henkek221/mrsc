@@ -254,9 +254,9 @@ struct StartupSettingsView: View {
                                         if s == .black { RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.white.opacity(0.18), lineWidth: 1) }
                                     }
                                     .overlay {
-                                        if s == style { Image(systemName: "checkmark").font(.headline.bold()).foregroundStyle(.white) }
+                                        if s == style { Image(systemName: "checkmark").font(.app(.headline).bold()).foregroundStyle(.white) }
                                     }
-                                Text(s.name).font(.caption).foregroundStyle(.primary)
+                                Text(s.name).font(.app(.caption)).foregroundStyle(.primary)
                             }
                         }
                         .buttonStyle(.plain)

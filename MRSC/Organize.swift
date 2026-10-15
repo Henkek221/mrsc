@@ -543,9 +543,9 @@ struct OrganizeView: View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Organize My Library").font(.title3.bold())
+                    Text("Organize My Library").font(.app(.title3).bold())
                     Text("Finds missing covers, wrong track numbers and missing songs per album, animated covers from Apple Music, messy tags, duplicates, and missing lyrics and genres. Nothing changes until you apply it.")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                        .font(.app(.subheadline)).foregroundStyle(.secondary)
                     Button {
                         Task { await organizer.scan(library: library, online: settings.onlineLookups && !settings.offlineMode) }
                     } label: {
@@ -574,7 +574,7 @@ struct OrganizeView: View {
                             Label(kind.title, systemImage: kind.symbol)
                             Spacer()
                             Button(list.allSatisfy(\.selected) ? "None" : "All") { organizer.setAll(kind, !list.allSatisfy(\.selected)) }
-                                .font(.caption.bold())
+                                .font(.app(.caption).bold())
                         }
                     }
                 }
@@ -596,7 +596,7 @@ struct OrganizeView: View {
                         if organizer.applying { ProgressView().tint(.white) }
                         Text(organizer.applying ? "Applying…" : "Apply \(count) " + (count == 1 ? "Change" : "Changes"))
                     }
-                    .font(.headline)
+                    .font(.app(.headline))
                     .frame(maxWidth: .infinity, minHeight: 50)
                 }
                 .buttonStyle(.glassProminent)
@@ -610,14 +610,14 @@ struct OrganizeView: View {
     private func row(_ issue: OrganizeIssue) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: issue.selected ? "checkmark.circle.fill" : "circle")
-                .font(.title3).foregroundStyle(issue.selected ? Theme.accent : .secondary)
+                .font(.app(.title3)).foregroundStyle(issue.selected ? Theme.accent : .secondary)
             if let url = issue.imageURL {
                 AsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: { Color.secondary.opacity(0.15) }
                     .frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 8))
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(issue.title).font(.system(size: 15, weight: .semibold))
-                Text(issue.detail).font(.system(size: 13)).foregroundStyle(.secondary)
+                Text(issue.title).font(.app(size: 15, weight: .semibold))
+                Text(issue.detail).font(.app(size: 13)).foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 2)

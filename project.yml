@@ -21,10 +21,14 @@ targets:
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         NSSpeechRecognitionUsageDescription: MRSC recognises lyrics in your songs on this device.
+        # ShazamKit (Search ▸ Shazam button). The App ID also needs the ShazamKit App Service in the developer portal.
+        NSMicrophoneUsageDescription: MRSC listens briefly to recognize the song playing near you with Shazam. Nothing is recorded or kept.
         NSAppleMusicUsageDescription: MRSC looks up animated album covers in the Apple Music catalog. Nothing from your library is shared.
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        # iPad runs natively and resizable (Split View, Stage Manager), which needs every orientation.
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         NSSupportsLiveActivities: true
         NSLocalNetworkUsageDescription: MRSC connects to your music server on your network to stream and download your music.
         # Self-hosted servers often run plain HTTP. NSAllowsLocalNetworking would make iOS ignore NSAllowsArbitraryLoads.
@@ -71,6 +75,8 @@ targets:
     dependencies:
       - target: MRSCWidgets
         embed: true
+      - target: MRSCShare
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ecki.mrsc
@@ -78,7 +84,7 @@ targets:
         SWIFT_VERSION: 6.0
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
         SWIFT_APPROACHABLE_CONCURRENCY: YES
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
@@ -106,6 +112,35 @@ targets:
         SWIFT_VERSION: 6.0
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
         SWIFT_APPROACHABLE_CONCURRENCY: YES
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_ENTITLEMENTS: MRSCWidgets/MRSCWidgets.entitlements
+        SKIP_INSTALL: YES
+  # Share ▸ MRSC for playlist links from other apps; hands the link to the app's song-list import.
+  MRSCShare:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "26.0"
+    info:
+      path: MRSCShare/Info.plist
+      properties:
+        CFBundleDisplayName: MRSC
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+    sources: [MRSCShare]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ecki.mrsc.share
+        DEVELOPMENT_TEAM: F6L6CQBQGR
+        SWIFT_VERSION: 6.0
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        SWIFT_APPROACHABLE_CONCURRENCY: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_ENTITLEMENTS: MRSCShare/MRSCShare.entitlements
         SKIP_INSTALL: YES

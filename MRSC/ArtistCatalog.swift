@@ -16,14 +16,15 @@ struct ArtistCatalog {
         var modules: [UUID: ModuleTrack] = [:]
         var seen = Set<String>()
         var positions: [String: Int] = [:]
-        for track in knownTracks where Self.matches(track.artist, name: name) || Self.matches(track.albumArtist ?? "", name: name) {
+        for track in knownTracks where track.credits(name) || Self.matches(track.albumArtist ?? "", name: name) {
             let identity = Self.identity(track)
             if seen.insert(identity).inserted {
                 positions[identity] = tracks.count
                 tracks.append(track)
             }
         }
-        for result in moduleTracks where Self.matches(result.artist, name: name) || Self.matches(result.albumArtist ?? "", name: name) {
+        for result in moduleTracks where Self.matches(result.artist, name: name) || Self.matches(result.albumArtist ?? "", name: name)
+            || (result.artists?.contains { ArtistCredit.same($0, name) } ?? false) {
             let track = result.previewTrack
             let identity = Self.identity(track)
             if let index = positions[identity] {
@@ -287,12 +288,13 @@ struct ArtistCatalogAlbumView: View {
     @Environment(PlayerModel.self) private var player
     let catalog: ArtistCatalog
     let album: LibraryEntry
+    @State private var selecting = false
 
     var body: some View {
         List {
             VStack(spacing: 12) {
                 ArtistCatalogArtwork(entry: album).frame(width: 210, height: 210)
-                Text(album.title).font(.title2.bold()).multilineTextAlignment(.center)
+                Text(album.title).font(.app(.title2).bold()).multilineTextAlignment(.center)
                 Text("\(catalog.name) · \(songCount(album.tracks.count))").foregroundStyle(.secondary)
                 HStack(spacing: 12) {
                     Button {
@@ -318,10 +320,17 @@ struct ArtistCatalogAlbumView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                Button { selecting = true } label: { Image(systemName: "checkmark.circle") }
+                    .accessibilityLabel("Select Songs")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     ArtistCatalogMenu(catalog: catalog, tracks: album.tracks, title: album.title, kind: .album)
                 } label: { Image(systemName: "ellipsis") }
             }
+        }
+        .sheet(isPresented: $selecting) {
+            TrackSelectionSheet(title: album.title, tracks: catalog.current(album.tracks, library: library)) { catalog.resolve($0, library: library) }
         }
     }
 }
@@ -376,4 +385,121 @@ final class ArtistCatalogLoader {
         } catch { return module.name }
     }
 
+}
+
+// MARK: - Select songs
+
+/// Pick several songs at once to download, keep or add to a playlist, instead of tapping each one.
+/// `resolve` turns the picked rows into library songs (registering unsaved extension results first).
+struct TrackSelectionSheet: View {
+    @Environment(LibraryStore.self) private var library
+    @Environment(DownloadManager.self) private var downloads
+    @Environment(\.dismiss) private var dismiss
+    let title: String
+    let tracks: [Track]
+    let resolve: ([Track]) -> [Track]
+    @State private var selection = Set<UUID>()
+    @State private var picking: PickedIDs?
+
+    private var picked: [Track] { tracks.filter { selection.contains($0.id) } }
+
+    /// Grouped by album when the songs span more than one, so a whole album is one tap.
+    private var groups: [(String, [Track])] {
+        var order: [String] = []
+        var byAlbum: [String: [Track]] = [:]
+        for t in tracks {
+            if byAlbum[t.album] == nil { order.append(t.album) }
+            byAlbum[t.album, default: []].append(t)
+        }
+        return order.count > 1 ? order.map { ($0, byAlbum[$0]!) } : [("", tracks)]
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(selection: $selection) {
+                ForEach(groups, id: \.0) { album, songs in
+                    Section {
+                        ForEach(songs) { row($0).tag($0.id) }
+                    } header: {
+                        if !album.isEmpty {
+                            let all = songs.allSatisfy { selection.contains($0.id) }
+                            HStack {
+                                Text(album).font(.app(size: 15, weight: .semibold)).foregroundStyle(.primary).lineLimit(1)
+                                Spacer()
+                                Button(all ? "Deselect" : "Select") {
+                                    let ids = songs.map(\.id)
+                                    if all { selection.subtract(ids) } else { selection.formUnion(ids) }
+                                }
+                                .font(.app(size: 13, weight: .semibold))
+                            }
+                            .textCase(nil)
+                        }
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(selection.count == tracks.count ? "Deselect All" : "Select All") {
+                        selection = selection.count == tracks.count ? [] : Set(tracks.map(\.id))
+                    }
+                }
+                ToolbarItemGroup(placement: .bottomBar) {
+                    Menu {
+                        Button { library.keep(resolve(picked).map(\.id)); dismiss() } label: { Label("Add to Library", systemImage: "plus") }
+                        Button { picking = PickedIDs(ids: resolve(picked).map(\.id)) } label: { Label("Add to Playlist…", systemImage: "text.badge.plus") }
+                    } label: { Image(systemName: "plus") }
+                    .disabled(selection.isEmpty)
+                    Spacer()
+                    Text(selection.isEmpty ? "Select Songs" : "\(selection.count) Selected").font(.app(.footnote))
+                    Spacer()
+                    Button {
+                        let songs = resolve(picked)
+                        library.keep(songs.map(\.id))
+                        downloads.download(songs)
+                        dismiss()
+                    } label: { Label("Download", systemImage: "arrow.down.circle") }
+                    .disabled(!picked.contains { saved($0)?.isDownloaded != true && $0.isRemote })
+                }
+            }
+            .sheet(item: $picking) { PlaylistPicker(trackIDs: $0.ids) }
+        }
+    }
+
+    private func row(_ track: Track) -> some View {
+        let current = saved(track) ?? track
+        return HStack(spacing: 12) {
+            Group {
+                if saved(track) == nil, let url = track.artworkURL.flatMap(URL.init(string:)), url.scheme?.hasPrefix("http") == true {
+                    AsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: {
+                        GeneratedCover(spec: CoverKit.auto(track.album + track.artist))
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 8 * ThemeStore.shared.current.cornerScale, style: .continuous))
+                } else {
+                    ArtworkView(track: current).thumbnail()
+                }
+            }
+            .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(track.title).font(.app(size: 16, weight: .medium)).lineLimit(1)
+                Text("\(track.artistCredit) • \(formatTime(track.duration))").font(.app(size: 13)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            if current.isRemote, downloads.phase(current) != .idle {
+                DownloadIndicator(phase: downloads.phase(current), size: 16)
+            }
+        }
+    }
+
+    /// The library's copy of a row, if it has one (extension results start out unsaved).
+    private func saved(_ track: Track) -> Track? {
+        if let source = track.sourceID, let remote = track.remoteID, let t = library.track(source: source, remoteID: remote) { return t }
+        return library.trackByID[track.id]
+    }
+
+    private struct PickedIDs: Identifiable { let ids: [UUID]; var id: String { ids.map(\.uuidString).joined() } }
 }

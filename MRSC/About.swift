@@ -31,7 +31,7 @@ struct AboutView: View {
                         .siteHeadline(34)
                         .padding(.top, 22)
                     Text("Version \(AppVersion.marketing) (\(AppVersion.build))")
-                        .font(.subheadline)
+                        .font(.app(.subheadline))
                         .foregroundStyle(.secondary)
                         .padding(.top, 2)
                     Text("The music player with way too many settings.")
@@ -73,7 +73,7 @@ struct AboutView: View {
                 Text(title).foregroundStyle(.primary)
                 Spacer()
                 Image(systemName: "arrow.up.right")
-                    .font(.footnote.weight(.semibold))
+                    .font(.app(.footnote).weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
         }

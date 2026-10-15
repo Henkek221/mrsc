@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The rows of the player screen, top to bottom, in whatever order the theme wants.
 nonisolated enum PlayerBlock: String, Codable, CaseIterable, Identifiable, Sendable {
-    case artwork, title, scrubber, controls, bar
+    case artwork, title, scrubber, controls, volume, bar
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -12,6 +12,7 @@ nonisolated enum PlayerBlock: String, Codable, CaseIterable, Identifiable, Senda
         case .title: "Title & Artist"
         case .scrubber: "Progress Bar"
         case .controls: "Play Controls"
+        case .volume: "Volume"
         case .bar: "Button Row"
         }
     }
@@ -21,6 +22,7 @@ nonisolated enum PlayerBlock: String, Codable, CaseIterable, Identifiable, Senda
         case .title: "textformat"
         case .scrubber: "minus"
         case .controls: "playpause.fill"
+        case .volume: "speaker.wave.2.fill"
         case .bar: "circle.grid.3x3.fill"
         }
     }
@@ -131,6 +133,13 @@ nonisolated enum PlayButtonStyle: String, Codable, CaseIterable, Identifiable, S
     var title: String { ["glass": "White Circle", "accent": "Accent Circle", "plain": "Icon Only"][rawValue] ?? rawValue }
 }
 
+/// How the buttons of the bottom row are drawn: glass bubbles, or bare icons that light up when on.
+nonisolated enum PlayerBarStyle: String, Codable, CaseIterable, Identifiable, Sendable {
+    case glass, plain
+    var id: String { rawValue }
+    var title: String { self == .glass ? "Glass Buttons" : "Icons Only" }
+}
+
 nonisolated enum PlayerTitleAlignment: String, Codable, CaseIterable, Identifiable, Sendable {
     case leading, center
     var id: String { rawValue }
@@ -138,12 +147,13 @@ nonisolated enum PlayerTitleAlignment: String, Codable, CaseIterable, Identifiab
 }
 
 nonisolated struct PlayerConfig: Codable, Hashable, Sendable {
-    var blocks: [PlayerBlockEntry] = PlayerBlock.allCases.map { PlayerBlockEntry(block: $0) }
+    var blocks: [PlayerBlockEntry] = PlayerBlock.allCases.map { PlayerBlockEntry(block: $0, visible: $0 != .volume) }
     var bar: [PlayerBarEntry] = Self.bar(.airplay, .modes, .sleep)
     var menu: [PlayerMenuEntry] = PlayerMenuItem.allCases.map { .init(item: $0, visible: ![.designCover, .editLyrics, .sleep].contains($0)) }
     var spacing: PlayerSpacing = .comfortable
     var titleAlignment: PlayerTitleAlignment = .leading
     var playStyle: PlayButtonStyle = .glass
+    var barStyle: PlayerBarStyle = .glass
     var controlScale = 1.0
     var showShuffleRepeat = true
     var showStar = true
@@ -159,7 +169,7 @@ nonisolated struct PlayerConfig: Codable, Hashable, Sendable {
         func v<T: Decodable>(_ k: CodingKeys, _ d: T) -> T { (try? c.decodeIfPresent(T.self, forKey: k)) ?? d }
         p.blocks = v(.blocks, p.blocks); p.bar = v(.bar, p.bar); p.menu = v(.menu, p.menu)
         p.spacing = v(.spacing, p.spacing); p.titleAlignment = v(.titleAlignment, p.titleAlignment)
-        p.playStyle = v(.playStyle, p.playStyle); p.controlScale = v(.controlScale, p.controlScale)
+        p.playStyle = v(.playStyle, p.playStyle); p.barStyle = v(.barStyle, p.barStyle); p.controlScale = v(.controlScale, p.controlScale)
         p.showShuffleRepeat = v(.showShuffleRepeat, p.showShuffleRepeat); p.showStar = v(.showStar, p.showStar)
         p.showTitleMenu = v(.showTitleMenu, p.showTitleMenu); p.showTimes = v(.showTimes, p.showTimes)
         p.showEQBadge = v(.showEQBadge, p.showEQBadge)
@@ -214,6 +224,7 @@ struct PlayerPreview: View {
         switch theme.nowPlaying {
         case .artworkTint: LinearGradient(colors: [theme.accentColor.opacity(0.85), theme.accentColor.opacity(0.4), .black], startPoint: .top, endPoint: .bottom)
         case .blurredArtwork: ZStack { GeneratedCover(spec: CoverKit.auto(theme.name + "cover")).scaledToFill().blur(radius: 24); Color.black.opacity(0.4) }
+        case .livingArtwork: ZStack { GeneratedCover(spec: CoverKit.auto(theme.name + "cover")).scaledToFill().saturation(1.5).blur(radius: 34); Color.black.opacity(0.2) }
         case .themeColors: LinearGradient(colors: theme.colors, startPoint: .top, endPoint: .bottom)
         case .black: Color.black
         }
@@ -236,8 +247,8 @@ struct PlayerPreview: View {
             HStack(spacing: 10 * s) {
                 // Like the player: a centred title sits in the middle of the whole row, the buttons stay on the right.
                 VStack(alignment: centered ? .center : .leading, spacing: 2 * s) {
-                    Text("Song Title").font(.system(size: 22 * s, weight: .bold)).fontWidth(theme.typeWidth.width)
-                    Text("Artist").font(.system(size: 18 * s)).foregroundStyle(.white.opacity(0.6))
+                    Text("Song Title").font(.app(size: 22 * s, weight: .bold, theme: theme)).fontWidth(theme.typeWidth.width)
+                    Text("Artist").font(.app(size: 18 * s, theme: theme)).foregroundStyle(.white.opacity(0.6))
                 }
                 .frame(maxWidth: .infinity, alignment: centered ? .center : .leading)
                 .offset(x: centered && buttons > 0 ? CGFloat(buttons * 40 + buttons * 10) * s / 2 : 0)
@@ -249,21 +260,29 @@ struct PlayerPreview: View {
                 Capsule().fill(.white.opacity(0.25)).frame(height: 6 * s)
                     .overlay(alignment: .leading) { Capsule().fill(.white).frame(width: w * 0.35, height: 6 * s) }
                 if p.showTimes {
-                    HStack { Text("1:12"); Spacer(); Text("3:41") }.font(.system(size: 12 * s, weight: .medium)).foregroundStyle(.white.opacity(0.6))
+                    HStack { Text("1:12"); Spacer(); Text("3:41") }.font(.app(size: 12 * s, weight: .medium, theme: theme)).foregroundStyle(.white.opacity(0.6))
                 }
             }
         case .controls:
             let c = s * p.controlScale
             HStack {
-                if p.showShuffleRepeat { Image(systemName: "shuffle").font(.system(size: 19 * c, weight: .semibold)).opacity(0.5); Spacer() }
-                Image(systemName: "backward.fill").font(.system(size: 34 * c))
+                if p.showShuffleRepeat { Image(systemName: "shuffle").font(.app(size: 19 * c, weight: .semibold, theme: theme)).opacity(0.5); Spacer() }
+                Image(systemName: "backward.fill").font(.app(size: 34 * c, theme: theme))
                 Spacer()
                 playButton(c)
                 Spacer()
-                Image(systemName: "forward.fill").font(.system(size: 34 * c))
-                if p.showShuffleRepeat { Spacer(); Image(systemName: "repeat").font(.system(size: 19 * c, weight: .semibold)).opacity(0.5) }
+                Image(systemName: "forward.fill").font(.app(size: 34 * c, theme: theme))
+                if p.showShuffleRepeat { Spacer(); Image(systemName: "repeat").font(.app(size: 19 * c, weight: .semibold, theme: theme)).opacity(0.5) }
             }
             .frame(maxWidth: p.showShuffleRepeat ? .infinity : w * 0.72)
+        case .volume:
+            HStack(spacing: 10 * s) {
+                Image(systemName: "speaker.fill")
+                Capsule().fill(.white.opacity(0.25)).frame(height: 6 * s)
+                    .overlay(alignment: .leading) { Capsule().fill(.white).frame(width: w * 0.42, height: 6 * s) }
+                Image(systemName: "speaker.wave.3.fill")
+            }
+            .font(.app(size: 12 * s, theme: theme)).foregroundStyle(.white.opacity(0.6))
         case .bar:
             HStack(spacing: 10 * s) {
                 if !p.barHasFlexible { Spacer(minLength: 0) }
@@ -273,14 +292,19 @@ struct PlayerPreview: View {
                     case .modes:
                         HStack(spacing: 0) {
                             ForEach(["music.note", "quote.bubble", "list.bullet"], id: \.self) { sym in
-                                Image(systemName: sym).font(.system(size: 16 * s, weight: .semibold)).frame(maxWidth: .infinity)
+                                Image(systemName: sym).font(.app(size: 16 * s, weight: .semibold, theme: theme)).frame(maxWidth: .infinity)
                                     .frame(height: 40 * s)
                                     .background { if sym == "music.note" { Capsule().fill(.white.opacity(0.25)).padding(.horizontal, 4 * s) } }
                             }
                         }
                         .frame(height: 48 * s)
                         .background(Capsule().fill(.white.opacity(0.12)))
-                    default: bubble(e.item.icon, size: 48 * s)
+                    default:
+                        if p.barStyle == .plain {
+                            Image(systemName: e.item.icon).font(.app(size: 19 * s, weight: .medium, theme: theme)).opacity(0.7).frame(width: 48 * s, height: 48 * s)
+                        } else {
+                            bubble(e.item.icon, size: 48 * s)
+                        }
                     }
                 }
                 if !p.barHasFlexible { Spacer(minLength: 0) }
@@ -298,18 +322,18 @@ struct PlayerPreview: View {
     @ViewBuilder private func playButton(_ c: CGFloat) -> some View {
         switch p.playStyle {
         case .glass:
-            Image(systemName: "pause.fill").font(.system(size: 28 * c, weight: .bold)).foregroundStyle(.black.opacity(0.75))
+            Image(systemName: "pause.fill").font(.app(size: 28 * c, weight: .bold, theme: theme)).foregroundStyle(.black.opacity(0.75))
                 .frame(width: 74 * c, height: 74 * c).background(Circle().fill(.white.opacity(0.92)))
         case .accent:
-            Image(systemName: "pause.fill").font(.system(size: 28 * c, weight: .bold))
+            Image(systemName: "pause.fill").font(.app(size: 28 * c, weight: .bold, theme: theme))
                 .frame(width: 74 * c, height: 74 * c).background(Circle().fill(theme.accentColor))
         case .plain:
-            Image(systemName: "pause.fill").font(.system(size: 46 * c, weight: .bold)).frame(width: 74 * c, height: 74 * c)
+            Image(systemName: "pause.fill").font(.app(size: 46 * c, weight: .bold, theme: theme)).frame(width: 74 * c, height: 74 * c)
         }
     }
 
     private func bubble(_ symbol: String, size: CGFloat) -> some View {
-        Image(systemName: symbol).font(.system(size: size * 0.36, weight: .semibold))
+        Image(systemName: symbol).font(.app(size: size * 0.36, weight: .semibold, theme: theme))
             .frame(width: size, height: size)
             .background(Circle().fill(.white.opacity(0.14)))
     }
@@ -356,6 +380,7 @@ struct PlayerLayoutEditor: View {
                         Button { theme.player.bar.append(PlayerBarEntry(item: i)) } label: { Label(i.title, systemImage: i.icon) }
                     }
                 } label: { Label("Add Button", systemImage: "plus") }
+                Picker("Style", selection: $theme.player.barStyle) { ForEach(PlayerBarStyle.allCases) { Text($0.title).tag($0) } }
             } header: { Text("Button Row") } footer: {
                 Text("Add, remove and drag buttons. Spacers push buttons apart: one on each side centres what's between them.")
             }
@@ -443,14 +468,14 @@ struct PlayerElementPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text(target.title).font(.system(size: 17, weight: .bold))
+                Text(target.title).font(.app(size: 17, weight: .bold))
                 Spacer()
                 if let hide {
-                    Button(action: hide) { Label("Hide", systemImage: "eye.slash").font(.system(size: 14, weight: .semibold)) }
+                    Button(action: hide) { Label("Hide", systemImage: "eye.slash").font(.app(size: 14, weight: .semibold)) }
                         .buttonStyle(.glass)
                 }
                 Button(action: close) {
-                    Image(systemName: "checkmark").font(.system(size: 14, weight: .bold)).frame(width: 30, height: 30)
+                    Image(systemName: "checkmark").font(.app(size: 14, weight: .bold)).frame(width: 30, height: 30)
                 }
                 .buttonStyle(.glassProminent)
                 .tint(.white)
@@ -487,9 +512,13 @@ struct PlayerElementPanel: View {
             chips("Play Button", PlayButtonStyle.allCases, $theme.player.playStyle) { ($0.title, ["glass": "circle.fill", "accent": "circle.hexagongrid.fill", "plain": "play.fill"][$0.rawValue]!) }
             slider("Size", $theme.player.controlScale, 0.75...1.25)
             toggleChip("Shuffle & Repeat", "shuffle", $theme.player.showShuffleRepeat)
+        case .block(.volume):
+            Text("Changes the volume of the phone, the same as the buttons on its side.")
+                .font(.app(size: 13)).foregroundStyle(.white.opacity(0.6))
         case .block(.bar):
+            chips("Style", PlayerBarStyle.allCases, $theme.player.barStyle) { ($0.title, $0 == .glass ? "circle.circle" : "circle.dashed") }
             Text("Tap to add or remove. Drag the buttons in the row to move them.")
-                .font(.system(size: 13)).foregroundStyle(.white.opacity(0.6))
+                .font(.app(size: 13)).foregroundStyle(.white.opacity(0.6))
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 12) {
                 ForEach(PlayerBarItem.allCases) { item in
                     let on = item != .spacer && theme.player.bar.contains { $0.item == item }
@@ -499,17 +528,17 @@ struct PlayerElementPanel: View {
                         }
                     } label: {
                         VStack(spacing: 5) {
-                            Image(systemName: item.icon).font(.system(size: 17, weight: .semibold))
+                            Image(systemName: item.icon).font(.app(size: 17, weight: .semibold))
                                 .foregroundStyle(on ? .black : .white)
                                 .frame(width: 46, height: 46)
                                 .background(Circle().fill(on ? .white : .white.opacity(0.12)))
                                 .overlay(alignment: .topTrailing) {
                                     Image(systemName: on ? "minus.circle.fill" : "plus.circle.fill")
-                                        .font(.system(size: 15)).foregroundStyle(on ? .white : .black, on ? .black : .white)
+                                        .font(.app(size: 15)).foregroundStyle(on ? .white : .black, on ? .black : .white)
                                         .offset(x: 4, y: -4)
                                 }
                             Text(item == .modes ? "Views" : item.title.replacingOccurrences(of: "“…” ", with: ""))
-                                .font(.system(size: 10, weight: .medium)).lineLimit(1).minimumScaleFactor(0.7)
+                                .font(.app(size: 10, weight: .medium)).lineLimit(1).minimumScaleFactor(0.7)
                         }
                     }
                     .buttonStyle(PressScale())
@@ -522,6 +551,7 @@ struct PlayerElementPanel: View {
         switch b {
         case .artworkTint: "drop.fill"
         case .blurredArtwork: "photo.fill"
+        case .livingArtwork: "swirl.circle.righthalf.filled"
         case .themeColors: "paintpalette.fill"
         case .black: "moon.fill"
         }
@@ -529,7 +559,7 @@ struct PlayerElementPanel: View {
 
     private func chips<T: Hashable & Identifiable>(_ title: String, _ options: [T], _ selection: Binding<T>, label: @escaping (T) -> (String, String)) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.55)).textCase(.uppercase)
+            Text(title).font(.app(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.55)).textCase(.uppercase)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(options) { o in
@@ -537,7 +567,7 @@ struct PlayerElementPanel: View {
                         let (name, icon) = label(o)
                         Button { withAnimation(.smooth(duration: 0.35)) { selection.wrappedValue = o } } label: {
                             Label(name, systemImage: icon)
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.app(size: 14, weight: .semibold))
                                 .foregroundStyle(on ? .black : .white)
                                 .padding(.horizontal, 14).frame(height: 38)
                                 .background(Capsule().fill(on ? .white : .white.opacity(0.12)))
@@ -554,7 +584,7 @@ struct PlayerElementPanel: View {
     private func toggleChip(_ title: String, _ icon: String, _ isOn: Binding<Bool>) -> some View {
         Button { withAnimation(.smooth(duration: 0.3)) { isOn.wrappedValue.toggle() } } label: {
             Label(title, systemImage: icon)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.app(size: 14, weight: .semibold))
                 .foregroundStyle(isOn.wrappedValue ? .black : .white)
                 .padding(.horizontal, 14).frame(height: 38)
                 .background(Capsule().fill(isOn.wrappedValue ? .white : .white.opacity(0.12)))
@@ -566,9 +596,9 @@ struct PlayerElementPanel: View {
     private func slider(_ title: String, _ value: Binding<Double>, _ range: ClosedRange<Double>) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.55)).textCase(.uppercase)
+                Text(title).font(.app(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.55)).textCase(.uppercase)
                 Spacer()
-                Text("\(Int((value.wrappedValue * 100).rounded())) %").font(.system(size: 12, weight: .semibold)).monospacedDigit().foregroundStyle(.white.opacity(0.55))
+                Text("\(Int((value.wrappedValue * 100).rounded())) %").font(.app(size: 12, weight: .semibold)).monospacedDigit().foregroundStyle(.white.opacity(0.55))
             }
             Slider(value: value, in: range).tint(.white)
         }

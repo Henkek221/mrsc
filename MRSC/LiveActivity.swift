@@ -78,7 +78,7 @@ final class NowPlayingBridge {
         var shared = SharedNowPlaying()
         shared.hasTrack = true
         shared.title = t.title
-        shared.artist = t.artist
+        shared.artist = t.artistCredit
         shared.album = t.album
         shared.isPlaying = p.isPlaying
         shared.position = p.position
@@ -87,11 +87,11 @@ final class NowPlayingBridge {
         shared.accentHex = accent
         // The next item only, without copying the rest of a long queue every few seconds.
         let nextItem = p.queue.indices.contains(p.currentIndex + 1) ? p.queue[p.currentIndex + 1] : nil
-        shared.upNext = nextItem.flatMap { p.library.trackByID[$0.trackID] }.map { "\($0.title) — \($0.artist)" }
+        shared.upNext = nextItem.flatMap { p.library.trackByID[$0.trackID] }.map { "\($0.title) — \($0.artistCredit)" }
         // The widget's progress bar runs by itself from (updatedAt − position), so a playing song needs no new
         // data until something changes: another song, play/pause, a seek, the look. Saved now and then anyway,
         // for "Resume" after the app is gone.
-        let key = "\(t.id)|\(p.isPlaying)|\(accent)|\(art ?? "")|\(shared.upNext ?? "")|\(t.title)|\(t.artist)"
+        let key = "\(t.id)|\(p.isPlaying)|\(accent)|\(art ?? "")|\(shared.upNext ?? "")|\(t.title)|\(t.artistCredit)"
         let start = shared.updatedAt.addingTimeInterval(-shared.position)
         let seeked = p.isPlaying && abs(start.timeIntervalSince(savedStart)) > 2
         if key != savedKey || seeked || Date().timeIntervalSince(lastSave) > 30 {
@@ -107,7 +107,7 @@ final class NowPlayingBridge {
         // this activity only exists to add the lyrics.
         guard settings?.liveLyrics == true, ActivityAuthorizationInfo().areActivitiesEnabled,
               let lyrics = currentLyrics() else { endActivity(); return }
-        let state = NowPlayingAttributes.ContentState(title: t.title, artist: t.artist, lyric: lyrics.line, nextLyric: lyrics.next,
+        let state = NowPlayingAttributes.ContentState(title: t.title, artist: t.artistCredit, lyric: lyrics.line, nextLyric: lyrics.next,
                                                       isPlaying: p.isPlaying, artFile: art, accentHex: accent)
         if let activity {
             guard state != lastState else { return }

@@ -267,7 +267,7 @@ struct CustomizeView: View {
                         GradientIcon(symbol: "paintbrush.pointed.fill", colors: [.purple, .blue], size: 32)
                         Text("Colors, Fonts, Player & Lyrics")
                         Spacer()
-                        Image(systemName: "chevron.right").font(.footnote.bold()).foregroundStyle(.tertiary)
+                        Image(systemName: "chevron.right").font(.app(.footnote).bold()).foregroundStyle(.tertiary)
                     }
                 }
                 .tint(.primary)
@@ -308,7 +308,7 @@ struct CustomizeView: View {
                         GradientIcon(symbol: "play.rectangle.fill", colors: [.red, .orange], size: 32)
                         Text("Music Player")
                         Spacer()
-                        Image(systemName: "chevron.right").font(.footnote.bold()).foregroundStyle(.tertiary)
+                        Image(systemName: "chevron.right").font(.app(.footnote).bold()).foregroundStyle(.tertiary)
                     }
                 }
                 .tint(.primary)
@@ -318,10 +318,22 @@ struct CustomizeView: View {
                         Text("Widgets")
                     }
                 }
+                NavigationLink { LockScreenSettingsView() } label: {
+                    HStack(spacing: 14) {
+                        GradientIcon(symbol: "lock.fill", colors: [.red, .pink], size: 32)
+                        Text("Lock Screen")
+                    }
+                }
                 NavigationLink { HomeEditor() } label: {
                     HStack(spacing: 14) {
                         GradientIcon(symbol: "house.fill", colors: [.pink, .red], size: 32)
                         Text("Home Screen")
+                    }
+                }
+                NavigationLink { CustomAssetsView() } label: {
+                    HStack(spacing: 14) {
+                        GradientIcon(symbol: "textformat", colors: [.yellow, .orange], size: 32)
+                        Text("Fonts & Icons")
                     }
                 }
             }
@@ -350,11 +362,11 @@ struct TabsEditor: View {
                 ForEach(layout.tabs) { tab in
                     Button { editing = tab } label: {
                         HStack(spacing: 14) {
-                            Image(systemName: tab.icon).frame(width: 28).foregroundStyle(Theme.accent)
+                            IconImage(name: tab.icon, fallback: tab.kind.icon).frame(width: 28).foregroundStyle(Theme.accent)
                             Text(tab.title)
                             Spacer()
-                            if tab.kind == .shortcut { Text("Shortcut").font(.caption).foregroundStyle(.secondary) }
-                            Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.tertiary)
+                            if tab.kind == .shortcut { Text("Shortcut").font(.app(.caption)).foregroundStyle(.secondary) }
+                            Image(systemName: "chevron.right").font(.app(.caption).bold()).foregroundStyle(.tertiary)
                         }
                     }
                     .tint(.primary)
@@ -420,7 +432,7 @@ struct TabItemEditor: View {
                         ForEach(Self.icons, id: \.self) { icon in
                             Button { tab.icon = icon } label: {
                                 Image(systemName: icon)
-                                    .font(.system(size: 20))
+                                    .font(.app(size: 20))
                                     .frame(width: 44, height: 44)
                                     .background(tab.icon == icon ? Theme.accent.opacity(0.2) : Color.clear, in: RoundedRectangle(cornerRadius: 10))
                                     .foregroundStyle(tab.icon == icon ? Theme.accent : .primary)
@@ -430,6 +442,9 @@ struct TabItemEditor: View {
                     }
                     .padding(.vertical, 6)
                 }
+                Section {
+                    CustomIconGrid(selection: $tab.icon)
+                } header: { Text("Your Icons") } footer: { Text("Pictures from Files. PNGs with a transparent background look best.") }
                 Section { Button("Restore Default Name & Icon") { tab.title = tab.kind == .shortcut ? tab.title : tab.kind.title; tab.icon = tab.kind.icon } }
             }
             .navigationTitle("Edit Tab")

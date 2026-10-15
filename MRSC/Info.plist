@@ -72,6 +72,8 @@
 	<string>MRSC looks up animated album covers in the Apple Music catalog. Nothing from your library is shared.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>MRSC connects to your music server on your network to stream and download your music.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>MRSC listens briefly to recognize the song playing near you with Shazam. Nothing is recorded or kept.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>MRSC recognises lyrics in your songs on this device.</string>
 	<key>NSSupportsLiveActivities</key>
@@ -119,6 +121,13 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UTExportedTypeDeclarations</key>
 	<array>

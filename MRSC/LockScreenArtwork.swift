@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreImage
 import MediaPlayer
+import SwiftUI
 import UIKit
 
 // MARK: - Style
@@ -67,11 +68,13 @@ final class NowPlayingArtwork {
         guard settings.lockArtwork, Self.supportsFullscreen else { tall = nil; return nil }
         let style = LockArtStyle(layout: settings.lockArtLayout, motion: settings.lockArtMotion)
         let key = "\(Self.key(t))-\(style.id)"
-        if key == tallKey, let tall { return tall }
         if key != tallKey {
             tallKey = key
+            // The previous song's artwork must never stay up, even when this one has no cover to render.
+            tall = nil
             tallJob = Self.cover(t)?.cgImage.map { LockArtJob(key: key, cover: $0, style: style) }
         }
+        if let tall { return tall }
         guard let job = tallJob else { return nil }
         // Prepare local assets before the screen locks, rather than starting the encoder
         // only when the system first asks for a video in the background. Reuse any in-flight job.
@@ -100,6 +103,48 @@ final class NowPlayingArtwork {
             nonisolated(unsafe) let done = done
             Task { done(await job.video()) }
         }
+    }
+}
+
+// MARK: - Settings
+
+/// Settings ▸ Lock Screen (also under Customize): the full-screen cover and Live Lyrics.
+struct LockScreenSettingsView: View {
+    @Environment(AppSettings.self) private var settings
+    @Environment(PlayerModel.self) private var player
+
+    var body: some View {
+        @Bindable var settings = settings
+        let supported = NowPlayingArtwork.supportsFullscreen
+        Form {
+            Section {
+                Toggle("Fullscreen Artwork", isOn: $settings.lockArtwork)
+                if settings.lockArtwork && supported {
+                    Picker("Layout", selection: $settings.lockArtLayout) {
+                        ForEach(LockArtLayout.allCases) { Text($0.title).tag($0) }
+                    }
+                    Picker("Motion", selection: $settings.lockArtMotion) {
+                        ForEach(LockArtMotion.allCases) { Text($0.title).tag($0) }
+                    }
+                }
+            } footer: {
+                Text(supported
+                     ? "While music plays, tap the cover on the Lock Screen and it fills the screen. MRSC animates your own cover art: Breathe zooms in slowly, Drift pans across it, Still holds it. Framed keeps the whole cover visible on a blurred backdrop."
+                     : "This device doesn’t show full-screen artwork on its Lock Screen, so the normal cover is used.")
+            }
+            .disabled(!supported)
+            Section {
+                Toggle("Live Lyrics", isOn: $settings.liveLyrics)
+            } footer: {
+                Text("Adds the current line as a Live Activity for songs with synced lyrics. It shares the Dynamic Island with the player.")
+            }
+        }
+        .navigationTitle("Lock Screen")
+        .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: settings.lockArtwork) { player.refreshNowPlaying() }
+        .onChange(of: settings.lockArtLayout) { player.refreshNowPlaying() }
+        .onChange(of: settings.lockArtMotion) { player.refreshNowPlaying() }
+        .onChange(of: settings.liveLyrics) { player.refreshNowPlaying() }
     }
 }
 

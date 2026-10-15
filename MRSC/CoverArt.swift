@@ -267,7 +267,7 @@ struct GeneratedCover: View {
             if let symbol = spec.symbol {
                 GeometryReader { geo in
                     Image(systemName: symbol)
-                        .font(.system(size: geo.size.width * 0.34, weight: .semibold))
+                        .font(.app(size: geo.size.width * 0.34, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.92))
                         .shadow(color: .black.opacity(0.25), radius: geo.size.width * 0.03, y: geo.size.width * 0.015)
                         .frame(width: geo.size.width, height: geo.size.height)

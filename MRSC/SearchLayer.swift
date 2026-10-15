@@ -7,6 +7,9 @@ struct SearchLayer: View {
     @Environment(Router.self) private var router
     @Environment(PlayerModel.self) private var player
     @Environment(\.scenePhase) private var scenePhase
+    /// Regular width (iPad, full or large window): the system tab bar sits at the top, so the pills
+    /// and the mini player share one row along the bottom instead of flanking the bar.
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @FocusState private var focused: Bool
     /// The bar is on screen: the app is in front and no full-screen player covers it.
     @State private var watching = true
@@ -30,7 +33,8 @@ struct SearchLayer: View {
     @State private var barFrame: CGRect?
     @State private var lastReading: CGRect?
 
-    private var collapsed: Bool { barMinimized && !router.searchActive }
+    private var topBar: Bool { sizeClass == .regular }
+    private var collapsed: Bool { barMinimized && !router.searchActive && !topBar }
 
     private func barChanged(_ minimized: Bool) {
         settleToken += 1
@@ -59,10 +63,11 @@ struct SearchLayer: View {
             let origin = geo.frame(in: .global).minX
             let barMinX = barFrame.map { $0.minX - origin } ?? (W - Self.barWidth) / 2
             let barMaxX = barFrame.map { $0.maxX - origin } ?? (W + Self.barWidth) / 2
-            let left = max(8, barMinX - Self.gap - Self.size)
+            let left = topBar ? 16 : max(8, barMinX - Self.gap - Self.size)
             let addX: CGFloat = searching ? 16 : collapsed ? Self.minMargin + Self.minSize + 11 : left
             let pillX: CGFloat = searching ? 16 + Self.size + Self.gap
                 : collapsed ? W - Self.minMargin - Self.minSize
+                : topBar ? W - 16 - Self.size
                 : min(W - 8 - Self.size, barMaxX + Self.gap)
             let pillW: CGFloat = searching ? W - 32 - Self.size - Self.gap : sz
             let pillH: CGFloat = searching ? Self.size : sz
@@ -79,10 +84,20 @@ struct SearchLayer: View {
                 }
 
                 if !searching, player.current != nil {
-                    MiniPlayerCapsule()
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, barInset + Self.size + 10)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    if topBar {
+                        MiniPlayerCapsule()
+                            .frame(maxWidth: 560)
+                            .frame(height: Self.size)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 16 + Self.size + 12)
+                            .padding(.bottom, barInset)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    } else {
+                        MiniPlayerCapsule()
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, barInset + Self.size + 10)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                 }
 
                 ZStack(alignment: .bottomLeading) {
@@ -102,7 +117,7 @@ struct SearchLayer: View {
                                     router.closeSearch()
                                 } label: {
                                     Image(systemName: "chevron.backward")
-                                        .font(.system(size: 18, weight: .semibold))
+                                        .font(.app(size: 18, weight: .semibold))
                                         .foregroundStyle(Theme.accent)
                                         .frame(width: Self.size, height: Self.size)
                                         .contentShape(Circle())
@@ -129,7 +144,11 @@ struct SearchLayer: View {
             .animation(.smooth, value: player.current == nil)
         }
         .onChange(of: router.searchActive) { _, on in
-            guard on else { focused = false; return }
+            guard on else {
+                focused = false
+                if ShazamListener.shared.listening { ShazamListener.shared.cancel() }
+                return
+            }
             // Bringing up the keyboard is heavy; doing it on the same frames as the pill morph made opening stutter.
             Task {
                 try? await Task.sleep(for: .milliseconds(380))
@@ -158,6 +177,7 @@ struct SearchLayer: View {
 
     private func searchPill(searching: Bool, width: CGFloat, height: CGFloat) -> some View {
         @Bindable var router = router
+        let shazam = ShazamListener.shared
         return ZStack {
             if searching {
                 HStack(spacing: 8) {
@@ -172,13 +192,29 @@ struct SearchLayer: View {
                             Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
-                    } else if focused {
-                        // Just browsing: put the keyboard away without leaving search.
-                        Button { focused = false } label: {
-                            Image(systemName: "keyboard.chevron.compact.down").foregroundStyle(.secondary)
+                    } else {
+                        if focused {
+                            // Just browsing: put the keyboard away without leaving search.
+                            Button { focused = false } label: {
+                                Image(systemName: "keyboard.chevron.compact.down").foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Hide Keyboard")
+                        }
+                        // Recognise the song playing nearby, then search for it.
+                        Button {
+                            focused = false
+                            shazam.toggle(router: router, player: player)
+                        } label: {
+                            Image(systemName: "shazam.logo.fill")
+                                .font(.app(size: 20))
+                                .foregroundStyle(shazam.listening ? Theme.accent : .secondary)
+                                .animation(.smooth(duration: 0.35), value: shazam.listening)
+                                .frame(width: 32, height: 44)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Hide Keyboard")
+                        .accessibilityLabel(shazam.listening ? "Stop Listening" : "Shazam")
                     }
                 }
                 .padding(.horizontal, 18)
@@ -189,7 +225,7 @@ struct SearchLayer: View {
                     router.searchActive = true
                 } label: {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.app(size: 20, weight: .semibold))
                         .foregroundStyle(Theme.accent)
                         .frame(width: width, height: height)
                         .contentShape(Capsule())

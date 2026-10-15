@@ -60,11 +60,11 @@ struct TrackRow: View {
             if showArtwork { ArtworkView(track: track).thumbnail().frame(width: 52, height: 52) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.title)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.app(size: 16, weight: .medium))
                     .foregroundStyle(isCurrent ? Theme.accent : .primary)
                     .lineLimit(1)
-                Text(subtitle ?? "\(track.artist) • \(formatTime(track.duration))")
-                    .font(.system(size: 13))
+                Text(subtitle ?? "\(track.artistCredit) • \(formatTime(track.duration))")
+                    .font(.app(size: 13))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -78,7 +78,7 @@ struct TrackRow: View {
                 let phase = downloads.phase(track)
                 if phase == .idle || phase == .done {
                     Image(systemName: track.origin.symbol)
-                        .font(.system(size: 12))
+                        .font(.app(size: 12))
                         .foregroundStyle(track.isDownloaded ? Theme.accent : Color.secondary)
                         .frame(width: 16, height: 16)
                         .accessibilityLabel(track.origin.title)
@@ -112,10 +112,32 @@ struct TrackRow: View {
             ShareLink(item: ShareItem.text(for: track)) { Label("Share…", systemImage: "square.and.arrow.up") }
         }
         Divider()
-        Button { router.open(.artist(track.artist)) } label: { Label("Go to Artist", systemImage: "music.mic") }
+        GoToArtistItem(track: track)
         Button { router.open(.album("\(track.artist)|\(track.album)")) } label: { Label("Go to Album", systemImage: "square.stack") }
         Divider()
         Button(role: .destructive) { confirmDelete = true } label: { Label("Delete from Library", systemImage: "trash") }
+    }
+}
+
+// MARK: - Go to Artist
+
+/// "Go to Artist" in a menu: one button, or a submenu with each credited artist when the song has several.
+struct GoToArtistItem: View {
+    @Environment(Router.self) private var router
+    let track: Track
+    var icon = "music.mic"
+
+    var body: some View {
+        let names = track.creditedArtists
+        if names.count > 1 {
+            Menu {
+                ForEach(names, id: \.self) { name in
+                    Button(name) { router.open(.artist(name)) }
+                }
+            } label: { Label("Go to Artist", systemImage: icon) }
+        } else {
+            Button { router.open(.artist(track.artist)) } label: { Label("Go to Artist", systemImage: icon) }
+        }
     }
 }
 
@@ -133,7 +155,7 @@ struct PlaylistPicker: View {
             List {
                 Button { creating = true } label: {
                     Label("New Playlist…", systemImage: "plus")
-                        .font(.system(size: 17, weight: .medium))
+                        .font(.app(size: 17, weight: .medium))
                 }
                 ForEach(library.playlistEntries) { entry in
                     Button {
@@ -143,8 +165,8 @@ struct PlaylistPicker: View {
                         HStack(spacing: 12) {
                             ArtworkView(entry: entry, radius: 8).thumbnail().frame(width: 46, height: 46)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(entry.title).font(.system(size: 16, weight: .medium))
-                                Text(entry.subtitle).font(.system(size: 13)).foregroundStyle(.secondary)
+                                Text(entry.title).font(.app(size: 16, weight: .medium))
+                                Text(entry.subtitle).font(.app(size: 13)).foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -185,7 +207,7 @@ struct PlayShuffleBar: View {
     private func button(_ text: String, _ symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(text, systemImage: symbol)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.app(size: 17, weight: .semibold))
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .foregroundStyle(Theme.accent)
                 .background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -252,7 +274,7 @@ struct GradientIcon: View {
             .frame(width: size, height: size)
             .overlay {
                 Image(systemName: symbol)
-                    .font(.system(size: size * 0.5, weight: .semibold))
+                    .font(.app(size: size * 0.5, weight: .semibold))
                     .foregroundStyle(.white)
             }
     }
@@ -265,12 +287,12 @@ struct EmptyLibraryCard: View {
     var body: some View {
         VStack(spacing: 14) {
             Image(systemName: "music.note.house")
-                .font(.system(size: 38, weight: .semibold))
+                .font(.app(size: 38, weight: .semibold))
                 .foregroundStyle(Theme.accent)
             Text("Your library is empty")
-                .font(.system(size: 19, weight: .semibold))
+                .font(.app(size: 19, weight: .semibold))
             Text("Bring in songs from this iPhone, a folder or your music server — or try the demo library first.")
-                .font(.system(size: 14))
+                .font(.app(size: 14))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
             HStack(spacing: 10) {
@@ -307,8 +329,8 @@ struct ImportOverlay: View {
             HStack(spacing: 12) {
                 ProgressView()
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(s.title).font(.system(size: 14, weight: .semibold))
-                    if s.total > 0 { Text("\(s.done) of \(s.total)").font(.system(size: 12)).foregroundStyle(.secondary).contentTransition(.numericText()) }
+                    Text(s.title).font(.app(size: 14, weight: .semibold))
+                    if s.total > 0 { Text("\(s.done) of \(s.total)").font(.app(size: 12)).foregroundStyle(.secondary).contentTransition(.numericText()) }
                 }
             }
             .padding(.horizontal, 18)
@@ -329,7 +351,7 @@ struct AddMusicMenu: View {
     var body: some View {
         Button { router.openAddMusic() } label: {
             Image(systemName: "plus")
-                .font(.system(size: 22, weight: .semibold))
+                .font(.app(size: 22, weight: .semibold))
                 .foregroundStyle(Theme.accent)
                 .frame(width: size, height: size)
                 .contentShape(Circle())
@@ -432,8 +454,8 @@ struct AddMusicSheet: View {
         HStack(spacing: 14) {
             GradientIcon(symbol: symbol, colors: [color.opacity(0.8), color], size: 38)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 17, weight: .semibold)).foregroundStyle(.primary)
-                Text(detail).font(.system(size: 13)).foregroundStyle(.secondary)
+                Text(title).font(.app(size: 17, weight: .semibold)).foregroundStyle(.primary)
+                Text(detail).font(.app(size: 13)).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
         }
@@ -447,6 +469,37 @@ struct AddMusicSheet: View {
 /// One line of text that scrolls sideways when it doesn't fit, like the song title in Apple Music: it rests,
 /// glides to its end and comes round again. Text that fits stays still. With `centered`, short text is centred
 /// on a row `centerShift` points wider to the right (the player's title has its buttons there) but never runs under them.
+/// How a song's title and artist swap when the track changes: the old line drifts off against the skip
+/// direction with a soft blur while the new one drifts in from the other side. Going back reverses it.
+struct TrackTextTransition: Transition {
+    func body(content: Content, phase: TransitionPhase) -> some View {
+        content.modifier(TrackTextShift(phase: phase))
+    }
+
+    static var properties: TransitionProperties { TransitionProperties(hasMotion: true) }
+}
+
+/// Reads the direction live from the player, so a line that leaves after a direction change still goes the right way.
+private struct TrackTextShift: ViewModifier {
+    let phase: TransitionPhase
+    @Environment(PlayerModel.self) private var player
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        let side: CGFloat = player.steppedBack ? -1 : 1
+        let distance: CGFloat = reduceMotion ? 0 : 26
+        let x: CGFloat = switch phase {
+        case .willAppear: distance * side
+        case .didDisappear: -distance * side
+        case .identity: 0
+        }
+        content
+            .offset(x: x)
+            .blur(radius: phase.isIdentity || reduceMotion ? 0 : 5)
+            .opacity(phase.isIdentity ? 1 : 0)
+    }
+}
+
 struct MarqueeText: View {
     let text: String
     var centered = false
@@ -617,7 +670,7 @@ struct DownloadIndicator: View {
                     .transition(.scale(scale: 0.6).combined(with: .opacity))
             }
         }
-        .font(.system(size: size))
+        .font(.app(size: size))
         .frame(width: size, height: size)
         .animation(.spring(duration: 0.4, bounce: 0.35), value: phase.kind)
         .sensoryFeedback(.success, trigger: phase.kind) { _, new in new == 2 }
@@ -645,11 +698,26 @@ extension DownloadPhase {
 /// accessory already moves the safe area.
 struct MiniPlayerClearance: ViewModifier {
     @Environment(PlayerModel.self) private var player
+    @Environment(Router.self) private var router
     @Environment(LayoutStore.self) private var layout
     func body(content: Content) -> some View {
         content.safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear.frame(height: layout.usesClassicBar && player.current != nil ? SearchLayer.size + 10 : 0)
+            Color.clear.frame(height: layout.usesClassicBar && player.current != nil && !router.selecting ? SearchLayer.size + 10 : 0)
         }
     }
 }
 extension View { func clearsMiniPlayer() -> some View { modifier(MiniPlayerClearance()) } }
+
+/// Hides the tab bar, mini player and search pills while a list shows its own selection bottom bar.
+struct SelectionChrome: ViewModifier {
+    @Environment(Router.self) private var router
+    let active: Bool
+    func body(content: Content) -> some View {
+        content
+            .toolbarVisibility(active ? .hidden : .automatic, for: .tabBar)
+            .onChange(of: active) { _, on in router.selecting = on }
+            .onDisappear { if active { router.selecting = false } }
+            .onAppear { if active { router.selecting = true } }
+    }
+}
+extension View { func selectionChrome(_ active: Bool) -> some View { modifier(SelectionChrome(active: active)) } }

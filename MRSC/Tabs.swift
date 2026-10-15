@@ -48,7 +48,7 @@ struct StudioView: View {
                         ForEach(ContinuationMode.allCases.filter { $0 != .stop }) { mode in
                             VStack(alignment: .leading, spacing: 2) {
                                 Label(mode.title, systemImage: mode.symbol)
-                                Text(mode.detail).font(.caption).foregroundStyle(.secondary)
+                                Text(mode.detail).font(.app(.caption)).foregroundStyle(.secondary)
                             }
                             .tag(mode)
                         }
@@ -66,9 +66,9 @@ struct StudioView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Slider(value: $settings.shuffleFamiliarity, in: 0...1)
                         HStack {
-                            Text("Random").font(.caption).foregroundStyle(.secondary)
+                            Text("Random").font(.app(.caption)).foregroundStyle(.secondary)
                             Spacer()
-                            Text("Familiar").font(.caption).foregroundStyle(.secondary)
+                            Text("Familiar").font(.app(.caption)).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -84,7 +84,7 @@ struct StudioView: View {
                         Spacer()
                         Text(String(format: "%.2f×", player.playbackRate)).foregroundStyle(.secondary).monospacedDigit()
                         if player.playbackRate != 1 {
-                            Button("Reset") { withAnimation { player.playbackRate = 1 } }.font(.footnote)
+                            Button("Reset") { withAnimation { player.playbackRate = 1 } }.font(.app(.footnote))
                         }
                     }
                     Slider(value: $player.playbackRate, in: 0.5...2, step: 0.05)
@@ -141,16 +141,16 @@ struct EqualizerView: View {
             VStack(spacing: 18) {
                 VStack(spacing: 14) {
                     HStack {
-                        Text("Bands").font(.system(size: 18, weight: .bold))
+                        Text("Bands").font(.app(size: 18, weight: .bold))
                         Spacer()
                         Text("Active: \(eq.activeName)")
-                            .font(.system(size: 14))
+                            .font(.app(size: 14))
                             .foregroundStyle(.secondary)
                             .contentTransition(.interpolate)
                     }
                     ForEach(0..<10, id: \.self) { i in bandRow(i) }
                     HStack {
-                        Toggle("Enabled", isOn: $eq.enabled).font(.system(size: 15, weight: .medium))
+                        Toggle("Enabled", isOn: $eq.enabled).font(.app(size: 15, weight: .medium))
                     }
                     .padding(.top, 4)
                 }
@@ -162,9 +162,9 @@ struct EqualizerView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("My Presets").font(.system(size: 18, weight: .bold))
+                    Text("My Presets").font(.app(size: 18, weight: .bold))
                     Text("Press and hold a preset to edit or delete.")
-                        .font(.system(size: 13)).foregroundStyle(.secondary)
+                        .font(.app(size: 13)).foregroundStyle(.secondary)
                     if !eq.custom.isEmpty {
                         LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                             ForEach(eq.custom) { p in
@@ -178,7 +178,7 @@ struct EqualizerView: View {
                     }
                     Button { newName = ""; saving = true } label: {
                         Label("Save Current Settings", systemImage: "plus")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.app(size: 15, weight: .semibold))
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
                     .buttonStyle(.glass)
@@ -209,12 +209,12 @@ struct EqualizerView: View {
         @Bindable var eq = eq
         let gain = Binding<Double>(get: { Double(eq.gains[i]) }, set: { eq.gains[i] = Float($0) })
         return HStack(spacing: 8) {
-            Text(EQModel.labels[i]).font(.system(size: 14, weight: .semibold)).frame(width: 34, alignment: .leading)
+            Text(EQModel.labels[i]).font(.app(size: 14, weight: .semibold)).frame(width: 34, alignment: .leading)
             step("minus") { gain.wrappedValue = max(-12, gain.wrappedValue - 0.5) }
             Slider(value: gain, in: -12...12, step: 0.5).tint(Theme.accent)
             step("plus") { gain.wrappedValue = min(12, gain.wrappedValue + 0.5) }
             Text(String(format: "%.1f dB", gain.wrappedValue))
-                .font(.system(size: 13, weight: .medium)).monospacedDigit()
+                .font(.app(size: 13, weight: .medium)).monospacedDigit()
                 .frame(width: 60, alignment: .trailing)
         }
         .opacity(eq.enabled ? 1 : 0.45)
@@ -223,7 +223,7 @@ struct EqualizerView: View {
     private func step(_ symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .bold))
+                .font(.app(size: 11, weight: .bold))
                 .frame(width: 24, height: 24)
                 .background(Color(.tertiarySystemFill), in: Circle())
         }
@@ -237,7 +237,7 @@ struct EqualizerView: View {
                 if active { Image(systemName: "checkmark.circle.fill") }
                 Text(p.name).lineLimit(1)
             }
-            .font(.system(size: 15, weight: .semibold))
+            .font(.app(size: 15, weight: .semibold))
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity, minHeight: 42)
             .background(active ? Theme.accent : Color(.systemGray), in: Capsule())
@@ -328,7 +328,7 @@ struct MetadataListView: View {
     private var list: [Track] {
         let all = library.tracks.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
         guard !query.isEmpty else { return all }
-        return all.filter { $0.title.localizedCaseInsensitiveContains(query) || $0.artist.localizedCaseInsensitiveContains(query) || $0.album.localizedCaseInsensitiveContains(query) }
+        return all.filter { $0.title.localizedCaseInsensitiveContains(query) || $0.artistCredit.localizedCaseInsensitiveContains(query) || $0.album.localizedCaseInsensitiveContains(query) }
     }
 
     var body: some View {
@@ -339,8 +339,8 @@ struct MetadataListView: View {
                 HStack(spacing: 12) {
                     ArtworkView(track: track).thumbnail().frame(width: 44, height: 44)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(track.title).font(.system(size: 16, weight: .medium)).lineLimit(1)
-                        Text("\(track.artist) — \(track.album)").font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
+                        Text(track.title).font(.app(size: 16, weight: .medium)).lineLimit(1)
+                        Text("\(track.artistCredit) — \(track.album)").font(.app(size: 13)).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
             }
@@ -368,7 +368,7 @@ struct MetadataListView: View {
                 }
             }
         }
-        .toolbarVisibility(editMode.isEditing ? .hidden : .automatic, for: .tabBar)
+        .selectionChrome(editMode.isEditing)
         .sheet(isPresented: $batch) {
             BatchTagEditor(ids: Array(selection)) { editMode = .inactive; selection.removeAll() }
         }
@@ -399,7 +399,7 @@ struct BatchTagEditor: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("\(songCount(ids.count)) selected. Only fields you switch on are changed.").font(.footnote).foregroundStyle(.secondary)
+                    Text("\(songCount(ids.count)) selected. Only fields you switch on are changed.").font(.app(.footnote)).foregroundStyle(.secondary)
                 }
                 Section("Fields") {
                     ForEach(Field.allCases) { f in
@@ -577,7 +577,7 @@ struct TrackEditor: View {
                             Button(role: .destructive) { newArt = nil; removeArt = true } label: { Label("Remove", systemImage: "trash") }
                         }
                     }
-                    .font(.system(size: 15))
+                    .font(.app(size: 15))
                     .buttonStyle(.borderless)
                 }
                 Toggle("Apply to whole album", isOn: $applyToAlbum)
@@ -610,7 +610,7 @@ struct TrackEditor: View {
                 }
             }
             Section {
-                TextEditor(text: $lyrics).frame(minHeight: 180).font(.system(size: 14, design: .monospaced))
+                TextEditor(text: $lyrics).frame(minHeight: 180).font(.app(size: 14, design: .monospaced))
                 Button { pickingLyrics = true } label: { Label("Import .lrc / .txt", systemImage: "square.and.arrow.down") }
                 if !lyrics.isEmpty { Button(role: .destructive) { lyrics = "" } label: { Label("Clear Lyrics", systemImage: "trash") } }
             } header: { Text("Lyrics") } footer: {
@@ -702,6 +702,7 @@ struct SearchView: View {
     @State private var aiFor = ""
     @State private var moduleResults: [(InstalledModule, [ModuleTrack])] = []
     @State private var moduleLoading = false
+    @State private var category: BrowseCategory?
 
     private var smartFilter: SmartFilter? {
         guard q.count >= 3 else { return nil }
@@ -738,13 +739,14 @@ struct SearchView: View {
         let start = q.isEmpty ? self.idle : (title: "", tracks: [Track]())
         let picks = q.isEmpty ? self.suggested : []
         let songs = q.isEmpty ? start.tracks
-                              : library.tracks.filter { matches($0.title) || matches($0.artist) || matches($0.album) }
+                              : library.tracks.filter { matches($0.title) || matches($0.artistCredit) || matches($0.album) }
         let artists = q.isEmpty ? [] : library.artistEntries.filter { matches($0.title) }
         let albums = q.isEmpty ? [] : library.albumEntries.filter { matches($0.title) || matches($0.subtitle) }
         let playlists = q.isEmpty ? [] : library.playlistEntries.filter { matches($0.title) }
         let moduleArtists = q.isEmpty ? [] : moduleArtistNames(excluding: artists.map(\.title))
 
-        let smart = smartFilter
+        let shazam = ShazamListener.shared.hit.flatMap { $0.query == q ? $0 : nil }
+        let smart = shazam == nil ? smartFilter : nil
         let smartSongs = smart.map { SmartSearch.apply($0, to: library.tracks) } ?? []
         // Stops scanning lyrics after the first 20 hits.
         let songIDs = q.count >= 4 ? Set(songs.map(\.id)) : []
@@ -752,6 +754,9 @@ struct SearchView: View {
             .filter { t in !songIDs.contains(t.id) && (t.lyrics.map { $0.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil } ?? false) }
             .prefix(20)) : []
         List {
+            ShazamStatusSection()
+            if let shazam { ShazamResultSection(hit: shazam) }
+            if q.isEmpty { BrowseCategoriesSection(online: connected && ModuleStore.shared.hasSearchModules, selection: $category) }
             if let smart {
                 Section {
                     if smartSongs.isEmpty {
@@ -767,7 +772,7 @@ struct SearchView: View {
                     }
                 } header: {
                     Label(smart.summary, systemImage: "sparkle.magnifyingglass")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.app(size: 14, weight: .semibold))
                         .textCase(nil)
                 }
             }
@@ -778,7 +783,7 @@ struct SearchView: View {
                         NavigationLink {
                             ModuleArtistView(name: name).themedBackground()
                         } label: {
-                            Label(name, systemImage: "music.mic").font(.system(size: 16, weight: .medium)).lineLimit(1)
+                            Label(name, systemImage: "music.mic").font(.app(size: 16, weight: .medium)).lineLimit(1)
                         }
                     }
                 }
@@ -814,22 +819,24 @@ struct SearchView: View {
         }
         .listStyle(.plain)
         .navigationTitle("Search")
+        .navigationDestination(item: $category) { BrowseCategoryView(category: $0).themedBackground() }
         .scrollDismissesKeyboard(.immediately)
         .overlay {
             if !q.isEmpty && songs.isEmpty && artists.isEmpty && albums.isEmpty && playlists.isEmpty && smart == nil && lyricHits.isEmpty
-                && moduleResults.isEmpty && !moduleLoading {
+                && moduleResults.isEmpty && !moduleLoading && shazam == nil && ShazamListener.shared.phase == .idle {
                 ContentUnavailableView.search(text: q)
             }
         }
         .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 0) }
         .task(id: q) { await searchModules() }
+        .onChange(of: q) { ShazamListener.shared.dismiss() }
         .task(id: connected) {
             guard connected, layout.visibleSections.contains(.suggested) else { return }
             await ModuleStore.shared.refreshSuggestions(seeds: Array(library.mostPlayed.prefix(10)))
         }
         .task(id: q) {
             // Free-form questions ("something calm by Nils Frahm for reading") go to the on-device model.
-            guard q.split(separator: " ").count >= 3, SmartSearchAI.available else { return }
+            guard q.split(separator: " ").count >= 3, SmartSearchAI.available, ShazamListener.shared.hit?.query != q else { return }
             let parsed = SmartSearch.parse(q, artists: library.artistEntries.map(\.title), albums: library.albumEntries.map(\.title),
                                            genres: Array(Set(library.tracks.compactMap(\.genre))))
             guard !parsed.isStructured else { return }
@@ -871,8 +878,8 @@ struct SearchView: View {
             HStack(spacing: 12) {
                 ArtworkView(entry: e, radius: 8).thumbnail().frame(width: 48, height: 48)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(e.title).font(.system(size: 16, weight: .medium)).lineLimit(1)
-                    Text(e.subtitle).font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(e.title).font(.app(size: 16, weight: .medium)).lineLimit(1)
+                    Text(e.subtitle).font(.app(size: 13)).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
         }
@@ -961,23 +968,17 @@ struct SettingsView: View {
                     Text("Songs without lyrics are transcribed on this device with timestamps. Nothing leaves your iPhone.")
                 }
                 Section {
-                    Toggle("Fullscreen Artwork", isOn: $settings.lockArtwork)
-                    if settings.lockArtwork {
-                        Picker("Layout", selection: $settings.lockArtLayout) {
-                            ForEach(LockArtLayout.allCases) { Text($0.title).tag($0) }
-                        }
-                        Picker("Motion", selection: $settings.lockArtMotion) {
-                            ForEach(LockArtMotion.allCases) { Text($0.title).tag($0) }
+                    NavigationLink { LockScreenSettingsView() } label: {
+                        HStack(spacing: 14) {
+                            GradientIcon(symbol: "lock.fill", colors: [.red, .pink], size: 30)
+                            Text("Lock Screen")
+                            Spacer()
+                            Text(settings.lockArtwork && NowPlayingArtwork.supportsFullscreen ? "Animated Cover" : "Standard").foregroundStyle(.secondary)
                         }
                     }
-                    Toggle("Live Lyrics", isOn: $settings.liveLyrics)
-                } header: { Text("Lock Screen") } footer: {
-                    Text("Fullscreen Artwork makes a full-screen cover available. Tap the cover on the Lock Screen to expand it. Framed keeps the whole cover visible on a blurred backdrop. Live Lyrics adds the current line as a Live Activity for songs with synced lyrics — it shares the Dynamic Island with the player.")
+                } footer: {
+                    Text("A full-screen, slowly moving cover while music plays, and live lyrics.")
                 }
-                .onChange(of: settings.lockArtwork) { player.refreshNowPlaying() }
-                .onChange(of: settings.lockArtLayout) { player.refreshNowPlaying() }
-                .onChange(of: settings.lockArtMotion) { player.refreshNowPlaying() }
-                .onChange(of: settings.liveLyrics) { player.refreshNowPlaying() }
                 Section {
                     Toggle("Online Lookups for Organizer", isOn: $settings.onlineLookups)
                     LabeledContent("Siri & Shortcuts", value: "“Play … in MRSC”")

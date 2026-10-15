@@ -140,11 +140,11 @@ struct DownloadRow: View {
         HStack(spacing: 12) {
             ArtworkView(track: track).thumbnail().frame(width: 44, height: 44)
             VStack(alignment: .leading, spacing: 4) {
-                Text(track.title).font(.system(size: 15, weight: .medium)).lineLimit(1)
+                Text(track.title).font(.app(size: 15, weight: .medium)).lineLimit(1)
                 switch state {
                 case .downloading(let p): ProgressView(value: p).tint(Theme.accent)
-                case .failed(let m): Text(m).font(.caption).foregroundStyle(.red).lineLimit(1)
-                default: Text("Waiting…").font(.caption).foregroundStyle(.secondary)
+                case .failed(let m): Text(m).font(.app(.caption)).foregroundStyle(.red).lineLimit(1)
+                default: Text("Waiting…").font(.app(.caption)).foregroundStyle(.secondary)
                 }
             }
         }
@@ -171,7 +171,7 @@ struct FavoritesView: View {
                                 NavigationLink(value: e.route) {
                                     VStack(spacing: 6) {
                                         ArtworkView(entry: e, radius: 12).thumbnail(340).frame(width: 110, height: 110)
-                                        Text(e.title).font(.system(size: 13, weight: .medium)).lineLimit(1).frame(width: 110)
+                                        Text(e.title).font(.app(size: 13, weight: .medium)).lineLimit(1).frame(width: 110)
                                     }
                                 }
                                 .buttonStyle(.plain)
@@ -263,7 +263,7 @@ struct RadioView: View {
 
                 if !topArtists.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Artist Stations").font(.system(size: 22, weight: .bold)).padding(.horizontal, 20)
+                        Text("Artist Stations").font(.app(size: 22, weight: .bold)).padding(.horizontal, 20)
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 14) {
                                 ForEach(topArtists) { a in
@@ -271,10 +271,10 @@ struct RadioView: View {
                                         VStack(spacing: 8) {
                                             ArtworkView(entry: a).thumbnail(370).frame(width: 120, height: 120)
                                                 .overlay(alignment: .bottomTrailing) {
-                                                    Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 13, weight: .bold))
+                                                    Image(systemName: "dot.radiowaves.left.and.right").font(.app(size: 13, weight: .bold))
                                                         .foregroundStyle(.white).frame(width: 32, height: 32).glassEffect(.regular, in: .circle)
                                                 }
-                                            Text(a.title).font(.system(size: 13, weight: .medium)).lineLimit(1).frame(width: 120)
+                                            Text(a.title).font(.app(size: 13, weight: .medium)).lineLimit(1).frame(width: 120)
                                         }
                                     }
                                     .buttonStyle(.plain)
@@ -287,7 +287,7 @@ struct RadioView: View {
 
                 if !genres.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Genre Stations").font(.system(size: 22, weight: .bold)).padding(.horizontal, 20)
+                        Text("Genre Stations").font(.app(size: 22, weight: .bold)).padding(.horizontal, 20)
                         LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                             ForEach(genres, id: \.0) { g, list in
                                 let c = placeholderColors(seed: g)
@@ -309,10 +309,10 @@ struct RadioView: View {
     private func station(_ title: String, _ subtitle: String, _ icon: String, _ colors: [Color], action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 6) {
-                Image(systemName: icon).font(.system(size: 22, weight: .semibold))
+                Image(systemName: icon).font(.app(size: 22, weight: .semibold))
                 Spacer(minLength: 8)
-                Text(title).font(.system(size: 17, weight: .bold)).lineLimit(1)
-                Text(subtitle).font(.system(size: 12)).opacity(0.8).lineLimit(1)
+                Text(title).font(.app(size: 17, weight: .bold)).lineLimit(1)
+                Text(subtitle).font(.app(size: 12)).opacity(0.8).lineLimit(1)
             }
             .foregroundStyle(.white)
             .padding(14)
@@ -474,17 +474,17 @@ struct SourcesView: View {
                         HStack(spacing: 12) {
                             GradientIcon(symbol: acc.kind.symbol, colors: [Color(red: 0.55, green: 0.3, blue: 0.95), Color(red: 0.1, green: 0.6, blue: 0.95)], size: 36)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(acc.name).font(.headline)
-                                Text("\(acc.userName) · \(URL(string: acc.baseURL)?.host() ?? acc.baseURL)").font(.caption).foregroundStyle(.secondary)
+                                Text(acc.name).font(.app(.headline))
+                                Text("\(acc.userName) · \(URL(string: acc.baseURL)?.host() ?? acc.baseURL)").font(.app(.caption)).foregroundStyle(.secondary)
                             }
                             Spacer()
                             if sources.syncing.contains(acc.id) { ProgressView() }
                         }
                         HStack {
-                            Text("\(acc.trackCount) songs").font(.caption).foregroundStyle(.secondary)
-                            if let d = acc.lastSync { Text("· synced \(d.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.secondary) }
+                            Text("\(acc.trackCount) songs").font(.app(.caption)).foregroundStyle(.secondary)
+                            if let d = acc.lastSync { Text("· synced \(d.formatted(.relative(presentation: .named)))").font(.app(.caption)).foregroundStyle(.secondary) }
                         }
-                        if let e = sources.lastError[acc.id] { Text(e).font(.caption).foregroundStyle(.red) }
+                        if let e = sources.lastError[acc.id] { Text(e).font(.app(.caption)).foregroundStyle(.red) }
                     }
                     .swipeActions {
                         Button("Remove", role: .destructive) { sources.remove(acc.id) }
@@ -659,7 +659,7 @@ struct OctaveSearchView: View {
                                 VStack(alignment: .leading) {
                                     Text(song.title).foregroundStyle(.primary)
                                     Text("\(song.artist.name) · \(song.album.title)")
-                                        .font(.caption).foregroundStyle(.secondary)
+                                        .font(.app(.caption)).foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 Image(systemName: imported.contains(song.id) ? "checkmark.circle.fill" : "plus.circle")

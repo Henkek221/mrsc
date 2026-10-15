@@ -43,7 +43,7 @@ nonisolated enum TrackExport {
         @MainActor init(track t: Track, source: URL) {
             self.source = source
             title = t.title
-            artist = t.artist
+            artist = t.artistCredit
             album = t.album == "Unknown Album" ? nil : t.album
             albumArtist = t.albumArtist
             trackNumber = t.trackNumber

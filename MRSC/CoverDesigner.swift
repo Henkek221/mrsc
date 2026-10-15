@@ -57,7 +57,7 @@ struct CoverDesigner: View {
                                                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                                                         .stroke(Theme.accent, lineWidth: spec.style == style ? 3 : 0)
                                                 }
-                                            Text(style.title).font(.system(size: 11, weight: .medium))
+                                            Text(style.title).font(.app(size: 11, weight: .medium))
                                         }
                                     }
                                     .buttonStyle(.plain)
@@ -78,7 +78,7 @@ struct CoverDesigner: View {
                                                     Circle().fill(Color(hex: $0)).frame(width: 22, height: 22)
                                                         .overlay(Circle().stroke(.white.opacity(0.6), lineWidth: 1.5))
                                                 }
-                                                Text(palette.name).font(.system(size: 13, weight: .medium)).padding(.leading, 14)
+                                                Text(palette.name).font(.app(size: 13, weight: .medium)).padding(.leading, 14)
                                             }
                                             .padding(.horizontal, 12).frame(height: 40)
                                             .background(Color.primary.opacity(0.07), in: Capsule())
@@ -141,7 +141,7 @@ struct CoverDesigner: View {
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.system(size: 15, weight: .semibold)).padding(.horizontal, 20)
+            Text(title).font(.app(size: 15, weight: .semibold)).padding(.horizontal, 20)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -151,7 +151,7 @@ struct CoverDesigner: View {
         let selected = spec.symbol == name
         return Button { withAnimation { spec.symbol = name } } label: {
             Group {
-                if let name { Image(systemName: name).font(.system(size: 18, weight: .semibold)) } else { Text("None").font(.system(size: 12, weight: .medium)) }
+                if let name { Image(systemName: name).font(.app(size: 18, weight: .semibold)) } else { Text("None").font(.app(size: 12, weight: .medium)) }
             }
             .frame(width: 48, height: 48)
             .background(selected ? Theme.accent : Color.primary.opacity(0.07), in: Circle())

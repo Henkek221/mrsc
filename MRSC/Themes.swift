@@ -83,9 +83,9 @@ nonisolated struct AppTheme: Codable, Identifiable, Hashable, Sendable {
         var title: String { ["none": "None", "print": "White Border", "outline": "Ink Outline", "glow": "Glow"][rawValue] ?? rawValue }
     }
     enum NowPlayingBackground: String, Codable, CaseIterable, Identifiable, Sendable {
-        case artworkTint, blurredArtwork, themeColors, black
+        case artworkTint, blurredArtwork, livingArtwork, themeColors, black
         var id: String { rawValue }
-        var title: String { ["artworkTint": "Artwork Color", "blurredArtwork": "Blurred Artwork", "themeColors": "Theme Colors", "black": "Black"][rawValue] ?? rawValue }
+        var title: String { ["artworkTint": "Artwork Color", "blurredArtwork": "Blurred Artwork", "livingArtwork": "Living Artwork", "themeColors": "Theme Colors", "black": "Black"][rawValue] ?? rawValue }
     }
 
     var id: String
@@ -103,6 +103,8 @@ nonisolated struct AppTheme: Codable, Identifiable, Hashable, Sendable {
     var glass = 0.0
     var cornerScale = 1.0
     var font: FontStyle = .standard
+    /// Family name of a font you imported (Fonts & Icons); wins over `font` while it's installed.
+    var customFont: String?
     var icons: IconStyle = .standard
     var motion: Motion = .standard
     var playerLayout: PlayerLayout = .classic
@@ -139,7 +141,7 @@ nonisolated struct AppTheme: Codable, Identifiable, Hashable, Sendable {
         t.accent = v(.accent, t.accent); t.scheme = v(.scheme, t.scheme); t.background = v(.background, t.background)
         t.backgroundColors = v(.backgroundColors, t.backgroundColors); t.blur = v(.blur, t.blur)
         t.transparency = v(.transparency, t.transparency); t.glass = v(.glass, t.glass); t.cornerScale = v(.cornerScale, t.cornerScale)
-        t.font = v(.font, t.font); t.icons = v(.icons, t.icons); t.motion = v(.motion, t.motion)
+        t.font = v(.font, t.font); t.customFont = v(.customFont, t.customFont); t.icons = v(.icons, t.icons); t.motion = v(.motion, t.motion)
         t.playerLayout = v(.playerLayout, t.playerLayout); t.player = v(.player, t.player); t.artworkScale = v(.artworkScale, t.artworkScale)
         t.queueLayout = v(.queueLayout, t.queueLayout); t.lyricsSize = v(.lyricsSize, t.lyricsSize)
         t.lyricsCentered = v(.lyricsCentered, t.lyricsCentered); t.lyricsGlow = v(.lyricsGlow, t.lyricsGlow)
@@ -207,13 +209,16 @@ extension AppTheme {
             $0.searchTab = true
         }
         make("crimson", "Crimson") {
-            // Apple Music: lyrics, AirPlay and queue spread across the bottom.
-            $0.player.blocks = PlayerConfig.blocks(.artwork, .title, .scrubber, .controls, .bar)
-            $0.player.bar = PlayerConfig.bar(.lyrics, .spacer, .airplay, .spacer, .queue)
-            $0.player.showShuffleRepeat = false; $0.player.playStyle = .plain; $0.player.controlScale = 1.1
-            $0.inspiredBy = "Apple Music"; $0.summary = "Soft glass, blurred covers, glowing lyrics."
-            $0.accent = "#FA2D48"; $0.scheme = 0; $0.cornerScale = 1.1; $0.nowPlaying = .blurredArtwork; $0.blur = 0.75
-            $0.lyricsSize = 32; $0.lyricsGlow = true; $0.glass = 0.1; $0.miniPlayer = .capsule
+            // Apple Music, as close as it gets: cover filling the width and shrinking on pause, plain controls,
+            // volume slider, and lyrics · AirPlay · queue as bare icons lined up under the controls.
+            $0.player.blocks = PlayerConfig.blocks(.artwork, .title, .scrubber, .controls, .volume, .bar)
+            $0.player.bar = PlayerConfig.bar(.spacer, .lyrics, .spacer, .airplay, .spacer, .queue, .spacer)
+            $0.player.barStyle = .plain; $0.player.playStyle = .plain; $0.player.showShuffleRepeat = false
+            $0.player.controlScale = 1.0; $0.player.spacing = .comfortable
+            $0.inspiredBy = "Apple Music"; $0.summary = "Moving cover colors, plain controls, volume slider, glowing lyrics."
+            $0.accent = "#FA2D48"; $0.scheme = 0; $0.cornerScale = 0.6
+            $0.playerLayout = .classic; $0.artworkScale = 1.15; $0.nowPlaying = .livingArtwork
+            $0.lyricsSize = 32; $0.lyricsGlow = true; $0.miniPlayer = .capsule
             $0.tabs = [tab(.home, "Home", "house.fill"), tab(.radio, "Radio", "dot.radiowaves.left.and.right"),
                        tab(.library, "Library", "music.note.square.stack.fill")]
             $0.searchTab = true
@@ -393,6 +398,8 @@ struct ThemeRoot: ViewModifier {
                 }
             }
             .tint(t.accentColor)
+            .font(CustomAssets.shared.activeFont != nil ? Font.app(.body) : nil)
+            .onChange(of: t.customFont, initial: true) { _, f in CustomAssets.shared.applyBarFonts(f) }
             .fontDesign(t.font.design)
             .fontWidth(t.typeWidth.width)
             .textCase(t.allCaps ? .uppercase : nil)
@@ -492,7 +499,7 @@ struct ThemesView: View {
                 Picker("Show", selection: $filter) { ForEach(Filter.allCases) { Text($0.rawValue).tag($0) } }
                     .pickerStyle(.segmented)
 
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 16) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 16) {
                     ForEach(shown) { t in
                         Button { detail = t } label: { ThemeCard(theme: t, selected: store.selectedID == t.id, favorite: store.favorites.contains(t.id)) }
                             .buttonStyle(PressScale())
@@ -514,7 +521,7 @@ struct ThemesView: View {
                                            description: Text(filter == .favorites ? "Tap the heart on a theme you like." : "Create one or import a theme someone shared."))
                 }
                 Text("Themes are small .mrsctheme files. Share yours with AirDrop, Messages or a link; open a shared file or link here to add it.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .font(.app(.footnote)).foregroundStyle(.secondary)
             }
             .padding(16)
         }
@@ -585,7 +592,7 @@ struct ThemeCard: View {
                         if favorite { Image(systemName: "heart.fill").foregroundStyle(.pink) }
                         if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(.white, theme.accentColor) }
                     }
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.app(size: 16, weight: .bold))
                     .padding(8)
                 }
                 .overlay {
@@ -593,9 +600,9 @@ struct ThemeCard: View {
                         .stroke(selected ? theme.accentColor : Color.primary.opacity(0.08), lineWidth: selected ? 3 : 1)
                 }
             VStack(alignment: .leading, spacing: 1) {
-                Text(theme.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(.primary)
+                Text(theme.name).font(.app(size: 15, weight: .semibold)).foregroundStyle(.primary)
                 Text(theme.inspiredBy.map { "Inspired by \($0)" } ?? theme.summary ?? "by \(theme.author)")
-                    .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                    .font(.app(size: 12)).foregroundStyle(.secondary).lineLimit(1)
             }
         }
     }
@@ -615,7 +622,7 @@ struct ThemeMock: View {
                 ThemeTexture(kind: theme.texture).environment(\.colorScheme, theme.scheme == 1 && theme.nowPlaying == .themeColors ? .light : .dark)
                 VStack(alignment: theme.lyricsCentered ? .center : .leading, spacing: w * 0.05) {
                     Text(theme.name)
-                        .font(.system(size: w * 0.1, weight: .heavy))
+                        .font(.app(size: w * 0.1, weight: .heavy, theme: theme))
                         .fontWidth(theme.typeWidth.width)
                         .textCase(theme.allCaps ? .uppercase : nil)
                         .foregroundStyle(ink)
@@ -629,11 +636,11 @@ struct ThemeMock: View {
                         .overlay(alignment: .leading) { Capsule().fill(theme.accentColor).frame(width: w * 0.35, height: 3) }
                     HStack(spacing: w * 0.07) {
                         Image(systemName: "backward.fill")
-                        Image(systemName: "play.fill").font(.system(size: w * 0.11))
+                        Image(systemName: "play.fill").font(.app(size: w * 0.11, theme: theme))
                             .foregroundStyle(theme.accentColor)
                         Image(systemName: "forward.fill")
                     }
-                    .font(.system(size: w * 0.08))
+                    .font(.app(size: w * 0.08, theme: theme))
                     .foregroundStyle(ink)
                     .frame(maxWidth: .infinity)
                     if let tabs = theme.tabs {
@@ -641,14 +648,14 @@ struct ThemeMock: View {
                         HStack(spacing: 0) {
                             ForEach(Array(tabs.enumerated()), id: \.offset) { i, tab in
                                 VStack(spacing: 2) {
-                                    Image(systemName: tab.icon).font(.system(size: w * 0.07))
-                                    Text(tab.title).font(.system(size: w * 0.045, weight: .medium)).lineLimit(1).minimumScaleFactor(0.5)
+                                    IconImage(name: tab.icon, fallback: tab.kind.icon, size: w * 0.07).font(.app(size: w * 0.07, theme: theme))
+                                    Text(tab.title).font(.app(size: w * 0.045, weight: .medium, theme: theme)).lineLimit(1).minimumScaleFactor(0.5)
                                 }
                                 .foregroundStyle(i == 0 ? theme.accentColor : ink.opacity(0.6))
                                 .frame(maxWidth: .infinity)
                             }
                             if theme.searchTab ?? true {
-                                Image(systemName: "magnifyingglass").font(.system(size: w * 0.07))
+                                Image(systemName: "magnifyingglass").font(.app(size: w * 0.07, theme: theme))
                                     .foregroundStyle(ink.opacity(0.6))
                                     .frame(width: w * 0.16)
                             }
@@ -668,6 +675,7 @@ struct ThemeMock: View {
         switch theme.nowPlaying {
         case .artworkTint: LinearGradient(colors: [theme.accentColor.opacity(0.85), .black], startPoint: .top, endPoint: .bottom)
         case .blurredArtwork: ZStack { GeneratedCover(spec: CoverKit.auto(theme.name)).blur(radius: 14); Color.black.opacity(0.35) }
+        case .livingArtwork: ZStack { GeneratedCover(spec: CoverKit.auto(theme.name)).saturation(1.5).blur(radius: 20); Color.black.opacity(0.2) }
         case .themeColors: LinearGradient(colors: theme.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
         case .black: Color.black
         }
@@ -701,21 +709,21 @@ struct ThemeDetail: View {
                         PlayerPreview(theme: theme).frame(height: 270)
                     }
                     VStack(spacing: 4) {
-                        Text(theme.name).font(.title2.bold())
+                        Text(theme.name).font(.app(.title2).bold())
                         if let i = theme.inspiredBy { Text("Inspired by \(i)").foregroundStyle(.secondary) }
-                        if let s = theme.summary { Text(s).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center) }
-                        Text("by \(theme.author)").font(.caption).foregroundStyle(.tertiary)
+                        if let s = theme.summary { Text(s).font(.app(.subheadline)).foregroundStyle(.secondary).multilineTextAlignment(.center) }
+                        Text("by \(theme.author)").font(.app(.caption)).foregroundStyle(.tertiary)
                     }
                     HStack(spacing: 6) {
                         ForEach(1...5, id: \.self) { n in
                             Button { store.ratings[theme.id] = store.ratings[theme.id] == n ? nil : n } label: {
                                 Image(systemName: (store.ratings[theme.id] ?? 0) >= n ? "star.fill" : "star")
-                                    .font(.title3).foregroundStyle(.yellow)
+                                    .font(.app(.title3)).foregroundStyle(.yellow)
                             }
                             .buttonStyle(.plain)
                         }
                         Button { store.toggleFavorite(theme) } label: {
-                            Image(systemName: store.favorites.contains(theme.id) ? "heart.fill" : "heart").font(.title3).foregroundStyle(.pink)
+                            Image(systemName: store.favorites.contains(theme.id) ? "heart.fill" : "heart").font(.app(.title3)).foregroundStyle(.pink)
                         }
                         .buttonStyle(.plain)
                         .padding(.leading, 10)
@@ -750,12 +758,12 @@ struct ThemePreviewBanner: View {
         if let t = store.previewing {
             HStack(spacing: 10) {
                 Image(systemName: "eye.fill").foregroundStyle(t.accentColor)
-                Text("Previewing \(t.name)").font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                Text("Previewing \(t.name)").font(.app(size: 14, weight: .semibold)).lineLimit(1)
                 Spacer(minLength: 4)
                 Button("Cancel") { store.preview(nil) }.buttonStyle(.glass)
                 Button("Apply") { store.apply(t) }.buttonStyle(.glassProminent).tint(t.accentColor)
             }
-            .font(.system(size: 14))
+            .font(.app(size: 14))
             .padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 8)
             .glassEffect(.regular, in: Capsule())
             .padding(.horizontal, 16)
@@ -826,7 +834,9 @@ struct ThemeEditor: View {
                     slider("Corner Radius", $theme.cornerScale, 0...1.8)
                 }
                 Section("Type & Motion") {
-                    Picker("Font", selection: $theme.font) { ForEach(AppTheme.FontStyle.allCases) { Text($0.title).tag($0) } }
+                    NavigationLink { FontPicker(theme: $theme) } label: {
+                        LabeledContent("Font", value: theme.customFont ?? theme.font.title)
+                    }
                     Picker("Icons", selection: $theme.icons) { ForEach(AppTheme.IconStyle.allCases.filter { $0 != .filled }) { Text($0.title).tag($0) } }
                     Picker("Animations", selection: $theme.motion) { ForEach(AppTheme.Motion.allCases) { Text($0.title).tag($0) } }
                 }

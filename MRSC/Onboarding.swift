@@ -58,7 +58,7 @@ struct SiteNav<Trailing: View>: View {
                 .frame(width: 28, height: 28)
             Text("MRSC")
                 .foregroundStyle(onRed ? .white : .primary)
-                .font(.system(size: 18, weight: .bold))
+                .font(.app(size: 18, weight: .bold))
                 .tracking(-0.36)
             Spacer(minLength: 12)
             trailing
@@ -97,7 +97,7 @@ struct SitePill: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.app(size: 17, weight: .semibold))
                 .tracking(-0.17)
                 .foregroundStyle(onRed ? Theme.accent : .white)
                 .frame(minWidth: 150)
@@ -218,7 +218,7 @@ struct OnboardingView: View {
 
                 VStack(spacing: 0) {
                     Text("Free offline music player")
-                        .font(.system(size: 17, weight: .bold))
+                        .font(.app(size: 17, weight: .bold))
                         .tracking(-0.25)
                         .foregroundStyle(.white.opacity(0.86))
                         .textRenderer(BlurReveal(progress: heroTitle ? 1 : 0))
@@ -228,7 +228,7 @@ struct OnboardingView: View {
                         .textRenderer(BlurReveal(progress: heroTitle ? 1 : 0))
                         .padding(.top, 10)
                     Text("Plays the music you actually own. No ads. No account.")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.app(size: 17, weight: .semibold))
                         .tracking(-0.27)
                         .foregroundStyle(.white.opacity(0.86))
                         .textRenderer(BlurReveal(progress: heroLede ? 1 : 0))
@@ -245,9 +245,9 @@ struct OnboardingView: View {
                     Button { showTour() } label: {
                         HStack(spacing: 5) {
                             Text("See what it can do")
-                            Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold))
+                            Image(systemName: "chevron.right").font(.app(size: 14, weight: .bold))
                         }
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.app(size: 17, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(height: 30)
                         .contentShape(Rectangle())
@@ -264,7 +264,7 @@ struct OnboardingView: View {
 
     private func laterButton(onRed: Bool = false) -> some View {
         Button("Later") { finish {} }
-            .font(.system(size: 15, weight: .medium))
+            .font(.app(size: 15, weight: .medium))
             .foregroundStyle(onRed ? .white.opacity(0.8) : Site.ink2)
     }
 
@@ -371,7 +371,7 @@ struct OnboardingView: View {
 
                 Button { finish { Task { await library.loadDemo() } } } label: {
                     Text("Or start with the demo library")
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.app(size: 15, weight: .medium))
                         .foregroundStyle(Site.ink2)
                         .frame(height: 44)
                 }
@@ -388,22 +388,22 @@ struct OnboardingView: View {
         return Button { choose(source) } label: {
             HStack(spacing: 14) {
                 Image(systemName: source.symbol)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.app(size: 18, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 40, height: 40)
                     .background(source.color.gradient, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(source.title)
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.app(size: 17, weight: .semibold))
                         .tracking(-0.3)
                         .foregroundStyle(.primary)
                     Text(source.detail)
-                        .font(.system(size: 14))
+                        .font(.app(size: 14))
                         .foregroundStyle(Site.ink2)
                 }
                 Spacer(minLength: 8)
                 Image(systemName: isChosen ? "checkmark" : "chevron.right")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.app(size: 14, weight: .bold))
                     .foregroundStyle(isChosen ? Theme.accent : Color(uiColor: .tertiaryLabel))
                     .contentTransition(.symbolEffect(.replace))
             }
@@ -618,13 +618,13 @@ private struct RecordLabel: View {
                 Group {
                     if let symbol {
                         Image(systemName: symbol)
-                            .font(.system(size: s * 0.2, weight: .semibold))
+                            .font(.app(size: s * 0.2, weight: .semibold))
                             .transition(.scale(scale: 0.4).combined(with: .opacity))
                     } else {
                         VStack(spacing: 0) {
-                            Text(side).font(.system(size: s * 0.072, weight: .heavy)).tracking(s * 0.009)
+                            Text(side).font(.app(size: s * 0.072, weight: .heavy)).tracking(s * 0.009)
                             Spacer().frame(height: s * 0.3)
-                            Text("MRSC").font(.system(size: s * 0.11, weight: .heavy)).tracking(s * 0.009)
+                            Text("MRSC").font(.app(size: s * 0.11, weight: .heavy)).tracking(s * 0.009)
                         }
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
@@ -716,7 +716,7 @@ struct GlassCTA: View {
 
     private var label: some View {
         Text(title)
-            .font(.system(size: 17, weight: .bold))
+            .font(.app(size: 17, weight: .bold))
             .frame(maxWidth: .infinity)
             .frame(height: 30)
             .contentTransition(.opacity)
@@ -762,13 +762,13 @@ struct GoodbyeView: View {
 
             VStack(spacing: 10) {
                 Text(stayed ? "Glad you’re staying." : "Goodbye — see you soon.")
-                    .font(.system(size: 28, weight: .semibold))
+                    .font(.app(size: 28, weight: .semibold))
                     .tracking(-0.5)
                     .textRenderer(BlurReveal(progress: titleIn ? 1 : 0))
                     .id(stayed)
                     .transition(.opacity)
                 Text("Thanks for listening. Removing MRSC also removes the music you imported into it — your original files and your server stay as they are.")
-                    .font(.system(size: 15))
+                    .font(.app(size: 15))
                     .foregroundStyle(.secondary)
                     .textRenderer(BlurReveal(progress: subtitleIn ? 1 : 0))
             }

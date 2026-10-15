@@ -57,3 +57,28 @@ Bug reports and ideas are welcome as issues. Pull requests too, especially if yo
 The code is licensed under the [GNU General Public License v3.0](LICENSE). If you ship a modified version, its source has to be open too.
 
 The name MRSC and the MRSC logo are not part of that license. If you publish your own build, please give it a different name and icon.
+
+### Photos
+
+The Browse Categories photos in `MRSC/Assets.xcassets/Browse` are from [Unsplash](https://unsplash.com) under the [Unsplash License](https://unsplash.com/license), not the GPL. Thanks to:
+
+| Category | Photographer |
+|---|---|
+| Pop | [Aditya Chinchure](https://unsplash.com/photos/ZhQCZjr9fHo) |
+| Hip-Hop/Rap | [Gordon Cowie](https://unsplash.com/photos/qQzw8jPvip8) |
+| Rock | [Sui Xu](https://unsplash.com/photos/HjZjNx19snU) |
+| Dance | [Aleksandr Popov](https://unsplash.com/photos/hTv8aaPziOQ) |
+| R&B/Soul | [Josh Rocklage](https://unsplash.com/photos/HAAsKeZbHAc) |
+| Alternative | [Marco Mons](https://unsplash.com/photos/DIXT8Z9p-Sg) |
+| Electronic | [Marcela Laskoski](https://unsplash.com/photos/YrtFlrLo2DQ) |
+| Folk | [Alicia Christin Gerald](https://unsplash.com/photos/_kRuNyxq-Eo) |
+| Metal | [Peter Trones](https://unsplash.com/photos/snQrRRYLs90) |
+| Jazz | [Chris Bair](https://unsplash.com/photos/A10y2Eq7OHY) |
+| Classical | [Larisa Birta](https://unsplash.com/photos/slbOcNlWNHA) |
+| Country | [JosephHershMedia](https://unsplash.com/photos/1ZAduPYISHI) |
+| Latin | [Preillumination SeTh](https://unsplash.com/photos/n3NjosrCeLs) |
+| Reggae | [Royce Fonseca](https://unsplash.com/photos/gtJYJTy9xSc) |
+| Blues | [Jeremy Allouche](https://unsplash.com/photos/YStboKiFPVw) |
+| Punk | [Natalie Parham](https://unsplash.com/photos/fPKqpUbTL4Y) |
+| Soundtrack | [Jeremy Yap](https://unsplash.com/photos/J39X2xX_8CQ) |
+| Schlager | [Jason Leung](https://unsplash.com/photos/Xaanw0s0pMk) |

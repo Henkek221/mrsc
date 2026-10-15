@@ -33,7 +33,7 @@ final class AppServices {
 }
 
 enum ShareItem {
-    static func text(for t: Track) -> String { "\(t.title) — \(t.artist)" + (t.album == "Unknown Album" ? "" : " (\(t.album))") }
+    static func text(for t: Track) -> String { "\(t.title) — \(t.artistCredit)" + (t.album == "Unknown Album" ? "" : " (\(t.album))") }
     static func text(for e: LibraryEntry) -> String {
         "\(e.title)\n" + e.tracks.prefix(100).enumerated().map { "\($0.offset + 1). \($0.element.title) — \($0.element.artist)" }.joined(separator: "\n")
     }
@@ -181,7 +181,7 @@ struct WhatsPlayingIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard let t = AppServices.shared.player?.current else { return .result(dialog: "Nothing is playing.") }
-        return .result(dialog: "\(t.title) by \(t.artist).")
+        return .result(dialog: "\(t.title) by \(t.artistCredit).")
     }
 }
 

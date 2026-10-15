@@ -16,27 +16,27 @@ struct MiniPlayer: View {
             } else {
                 Image(systemName: "music.note").foregroundStyle(.secondary).frame(width: 32, height: 32)
             }
-            VStack(alignment: .leading, spacing: 0) {
-                Text(player.current?.title ?? "No Music Playing")
-                    .font(.system(size: 14, weight: .semibold))
-                    .lineLimit(1)
-                if placement != .inline, let artist = player.current?.artist {
-                    Text(artist).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+            ZStack(alignment: .leading) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(player.current?.title ?? "No Music Playing")
+                        .font(.app(size: 14, weight: .semibold))
+                        .lineLimit(1)
+                    if placement != .inline, let artist = player.current?.artistCredit {
+                        Text(artist).font(.app(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                    }
                 }
+                .id(player.current?.id)
+                .transition(TrackTextTransition())
             }
-            .id(player.current?.id)
-            .transition(.blurReplace)
             Spacer(minLength: 0)
             Button { player.togglePlay() } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 18))
+                    .font(.app(size: 18))
                     .frame(width: 36, height: 36)
                     .contentTransition(.symbolEffect(.replace))
             }
             if placement != .inline {
-                Button { player.next() } label: {
-                    Image(systemName: "forward.fill").font(.system(size: 18)).frame(width: 36, height: 36)
-                }
+                SkipButton(direction: .forward, size: 18, box: CGSize(width: 36, height: 36)) { player.next() }
             }
         }
         .buttonStyle(.plain)
@@ -63,18 +63,20 @@ struct MiniPlayerCapsule: View {
                     .frame(width: 38, height: 38)
                     .id(track.id)
                     .transition(.scale(scale: 0.8).combined(with: .opacity))
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(track.title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
-                    if style != .compact {
-                        Text(track.artist).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                ZStack(alignment: .leading) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(track.title).font(.app(size: 14, weight: .semibold)).lineLimit(1)
+                        if style != .compact {
+                            Text(track.artistCredit).font(.app(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                        }
                     }
+                    .id(track.id)
+                    .transition(TrackTextTransition())
                 }
-                .id(track.id)
-                .transition(.blurReplace)
                 Spacer(minLength: 0)
                 Button { player.togglePlay() } label: {
                     Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 16))
+                        .font(.app(size: 16))
                         .frame(width: 38, height: 38)
                         .contentTransition(.symbolEffect(.replace))
                         .background {
@@ -86,9 +88,7 @@ struct MiniPlayerCapsule: View {
                             }
                         }
                 }
-                Button { player.next() } label: {
-                    Image(systemName: "forward.fill").font(.system(size: 16)).frame(width: 32, height: 38)
-                }
+                SkipButton(direction: .forward, size: 16, box: CGSize(width: 32, height: 38)) { player.next() }
             }
             .buttonStyle(.plain)
             .padding(.leading, 7)
